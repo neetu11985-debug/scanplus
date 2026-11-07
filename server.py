@@ -7,6 +7,7 @@ from socketserver import TCPServer
 from uuid import uuid4
 from providers import FixtureDiscovery, FixtureRemoval
 from payments import DemoGateway
+from stripe_routes import StripeRoutes
 from pricing import LookupPricing
 from history import DemoHistory
 from storage import Store,digest
@@ -23,7 +24,7 @@ class LocalHTTPServer(ThreadingHTTPServer):
     def server_bind(self):
         TCPServer.server_bind(self);self.server_name='localhost';self.server_port=self.server_address[1]
 
-class Handler(BaseHTTPRequestHandler):
+class Handler(StripeRoutes, BaseHTTPRequestHandler):
     def setup(self):
         super().setup();self.connection.settimeout(5)
     def log_message(self,*_):pass  # No URL, body, cookie, number, code, nonce or exception logs.
@@ -74,6 +75,8 @@ class Handler(BaseHTTPRequestHandler):
             try:output.write(payload)
             except OSError:pass
     def get(self):
+        if self.path in ('/api/stripe/status', '/api/stripe/report'):
+            return self.stripe_get(STORE)
         if self.path=='/api/session/status':return self.reply(200,{'active':self.session() is not None})
         if self.path=='/api/session':
             if self.headers.get('Origin') not in (None,self.origin()):return self.reply(403,{'error':'Same-origin request required.'})
@@ -97,12 +100,14 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/api/export':
                 raw=json.dumps(report).encode();self.send_response(200);self.headers_common();self.send_header('Content-Type','application/json');self.send_header('Content-Disposition','attachment; filename=scanplus-demo-report.json');self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw);return
             return self.reply(200,report)
-        paths={'/':'index.html','/app.js':'app.js','/style.css':'style.css'}
+        paths={'/':'index.html','/app.js':'app.js','/style.css':'style.css', '/stripe-test':'stripe-test.html', '/stripe-test.js':'stripe-test.js'}
         if self.path not in paths:return self.reply(404,{'error':'Page not found.'})
         p=ROOT/paths[self.path];raw=p.read_bytes();self.send_response(200);self.headers_common()
         self.send_header('Content-Type',{'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8'}[p.suffix[1:]])
         self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw)
     def post(self):
+        if self.path == '/api/stripe/webhook':
+            return self.stripe_webhook(STORE)
         if self.headers.get('Origin')!=self.origin():return self.reply(403,{'error':'Same-origin request required.'})
         try:
             if self.headers.get('Transfer-Encoding'):return self.reply(400,{'error':'Transfer encoding is unsupported.'})
@@ -147,6 +152,8 @@ class Handler(BaseHTTPRequestHandler):
             s['verified']=True;s['verified_at']=time.time();s['verified_until']=s['expires'];s['consumed']=True;STORE.bind_identity(s['phone_ref'],self.sid,s['expires']);self.save(s)
             return self.reply(200,{'verified':True,'demo':True,'has_history':bool(DemoHistory(STORE).items(s['phone_ref']))})
         if not s['verified'] or s['verified_until']<=time.time():return self.reply(403,{'error':'Current test verification is required.'})
+        if self.path.startswith('/api/stripe/'):
+            return self.stripe_post(STORE, s, data)
         if self.path=='/api/quote':
             try:quote=DemoGateway(PRICING).quote(s,data.get('coupon_code',''))
             except ValueError as e:return self.reply(400,{'error':str(e)})

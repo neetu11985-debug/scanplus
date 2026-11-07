@@ -44,7 +44,7 @@ Vanilla HTML/CSS/JavaScript + Python standard-library JSON backend. No AI, exter
 
 Session cookies are random, HttpOnly and SameSite Strict, with a configurable 15-minute default lifetime. SQLite stores hashed session/CSRF tokens, a hash of the synthetic number, verification expiry/attempt/consumption state, a per-session report ID, test receipt and simulated removal job state. No raw phone, OTP, card or raw nonce is persisted. Reload resumes the appropriate demo step. Clear session deletes its record; restart preserves unexpired records. Downloaded JSON remains on the tester’s Mac independently. Demo HTTP cookies are not Secure; HTTPS WSGI cookies are Secure. No real personal data is enabled; this is not encrypted storage and does not establish production privacy readiness. See SECURITY.md for limits, deletion and configuration.
 
-API: POST /api/start, /api/verify, /api/checkout, /api/removal, /api/removal/status, /api/clear; GET /api/report. POST requires a configured/loopback host, same-origin Origin and session-bound CSRF token after starting. Session bootstrap rotates the token; stale tabs must reload. Checkout amount is server-controlled, repeated demo checkout returns the same receipt, and report access never trusts a browser payment flag. There is no production webhook route: unknown routes fail closed. No real callback, signature or payment capture has been implemented or tested.
+API: POST /api/start, /api/verify, /api/checkout, /api/removal, /api/removal/status, /api/clear; GET /api/report. POST requires a configured/loopback host, same-origin Origin and session-bound CSRF token after starting. Session bootstrap rotates the token; stale tabs must reload. Checkout amount is server-controlled, repeated demo checkout returns the same receipt, and report access never trusts a browser payment flag. There is no production payment route. A separate opt-in Stripe sandbox flow now implements signed test webhooks and server reconciliation; see [STRIPE_TEST.md](STRIPE_TEST.md). It does not enable live charging or qualify production payment capture.
 
 ## Honest coverage and removal
 
@@ -142,3 +142,7 @@ as data, never prints them, and passes them directly in server memory. This is
 plaintext local storage, not encryption or Keychain. Account/credential entry and
 live SMS/search approvals are still the owner's steps; no real key or provider was
 used to build or test this setup.
+
+## Stripe sandbox Checkout
+
+A separate [Stripe sandbox flow](STRIPE_TEST.md) is implemented at `/stripe-test`, linked from the demo. It uses hosted Stripe test Checkout, fixed server-owned $0.99 USD pricing, idempotent orders, signed webhooks, and server-verified report access. Default operation remains offline; test keys are environment-only and live keys/mode are rejected. Existing demo checkout and refunds remain separate. Automated coverage uses only mocked transport. Actual Stripe account setup, sandbox gateway validation, refunds, production authentication and launch review are still pending. No real payment or Stripe API request was made during implementation.

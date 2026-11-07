@@ -3,3 +3,12 @@
 @media(max-width:700px){.visual{overflow:clip;margin-left:-10px;margin-right:-10px;padding:5px 10px 12px;min-height:425px}.orbit{max-width:290px}.orbit-two{max-width:260px;height:320px}}
 body.report-mode .hero,body.report-mode .how,body.report-mode .workspace-intro{display:none}body.report-mode .workspace-section{display:block;padding-block:35px}body.report-mode .workspace{max-width:680px;margin:auto}#report-title{scroll-margin-top:24px}.text-button{min-height:44px;min-width:44px}.result summary,.coverage-list summary,.simulation>summary{min-height:44px;display:flex;align-items:center}.result summary{gap:12px}body.report-mode .privacy-note{display:none}
 @media(max-width:700px){.fine{font-size:12px!important}.result small{font-size:12px}.check{font-size:12px}.pill{font-size:10px}.progress li{font-size:12px}.simulation,.status-line{font-size:12px}.outline{min-height:44px}.demo-bar,.bar-copy{font-size:10px}.text-button{font-size:12px}.workspace-top{letter-spacing:1px}body.report-mode .workspace-section{padding:20px 14px}.coverage-list p{font-size:13px}}
+
+/* Separate, explicitly sandbox-only Stripe test page. */
+.stripe-sandbox{max-width:760px;margin:32px auto;padding:0 16px}
+.stripe-sandbox h1{font-size:clamp(1.6rem,5vw,2.4rem);line-height:1.2}
+.stripe-sandbox p{margin:16px 0;overflow-wrap:anywhere}
+.stripe-sandbox #actions{display:flex;flex-wrap:wrap;gap:12px;margin:24px 0}
+.stripe-sandbox button{white-space:normal}
+.stripe-sandbox pre{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%;font-size:.85rem}
+.stripe-sandbox #error{color:#a02929}
