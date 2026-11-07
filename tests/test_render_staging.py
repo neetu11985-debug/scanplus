@@ -112,7 +112,7 @@ class GunicornIntegration(unittest.TestCase):
         return result
 
     def test_auth_all_paths_and_boundaries(self):
-        for path in ('/', '/app.js', '/style.css', '/api/session/status', '/api/report', '/.env', '/server.py'):
+        for path in ('/', '/app.js', '/style.css', '/api/session/status', '/api/report', '/api/staging/database', '/.env', '/server.py'):
             for auth in (None, 'Basic !!!', 'Basic Zm9vOmJhcg=='):
                 status, headers, body = self.call(path, extra={'Authorization': auth})
                 self.assertEqual(status, 401, path)
@@ -159,6 +159,16 @@ class GunicornIntegration(unittest.TestCase):
         self.assertEqual(api('report')[1]['demo'], True)
         self.assertEqual(api('clear', {})[0], 200)
         self.assertEqual(api('report')[0], 403)
+
+    def test_database_probe_is_private_read_only_and_missing_env_is_not_success(self):
+        status, headers, body = self.call('/api/staging/database')
+        self.assertEqual(status, 503)
+        result = json.loads(body)
+        self.assertEqual(result['database'], 'not_configured')
+        self.assertFalse(result['customer_storage_enabled'])
+        self.assertEqual(headers['Cache-Control'], 'no-store')
+        self.assertEqual(self.call('/api/staging/database?sql=SELECT1')[0], 400)
+        self.assertEqual(self.call('/api/staging/database', payload={})[0], 405)
 
 
 if __name__ == '__main__': unittest.main()

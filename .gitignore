@@ -25,3 +25,5 @@ evidence/
 venv/
 node_modules/
 .pytest_cache/
+
+.neon

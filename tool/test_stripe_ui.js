@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync('static/stripe-test.js', 'utf8');
 function node() { return {textContent:'', hidden:true, disabled:false, children:[], append(n){this.children.push(n);}, replaceChildren(){this.children=[];}}; }
 function harness({verified=true, state='pending', amount=149, hash='', failed=false, url='https://checkout.stripe.com/c/pay/cs_test_fixture'}={}) {
-  const nodes = Object.fromEntries(['#status','#error','#actions','#report'].map(id=>[id,node()]));
+  const nodes = Object.fromEntries(['#status','#error','#actions','#report','#download'].map(id=>[id,node()]));
   const calls=[], redirects=[];
   const context={URL,AbortController,setTimeout,clearTimeout,
     document:{querySelector:id=>nodes[id],createElement:()=>node()},
@@ -38,6 +38,8 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
   h=harness({hash:'#cancelled'});await tick();assert.match(h.nodes['#status'].textContent,/cancelled/);assert.equal(h.redirects.length,0);
   await h.buttons()[1].onclick();assert.match(h.nodes['#status'].textContent,/paid/);
   await h.buttons()[0].onclick();assert.equal(h.nodes['#report'].hidden,false);assert.match(h.nodes['#report'].textContent,/<script>untrusted/);assert.equal(h.nodes['#report'].innerHTML,undefined);
+  await h.buttons()[1].onclick();assert.equal(h.nodes['#download'].hidden,false);
+  assert.deepEqual(JSON.parse(h.calls.find(c=>c.path==='/api/stripe/report/save').options.body),{confirm_synthetic:true});
   h=harness({state:'expired'});await tick();assert.equal(h.buttons().length,1);assert.match(h.buttons()[0].textContent,/Clear/);
   h=harness({url:'https://evil.example/pay'});await tick();await h.buttons()[0].onclick();assert.equal(h.redirects.length,0);assert.match(h.nodes['#error'].textContent,/Unsupported/);
   h=harness({failed:true});await tick();assert.match(h.nodes['#error'].textContent,/Sandbox disabled/);assert.equal(h.buttons().length,0);

@@ -1,3 +1,5 @@
+> Current release: see COMPLETION_HANDOFF.md and VERIFICATION_2026-11-07.md. They supersede older integration/readiness statements below. Default demo remains unchanged; the new sandbox profile is explicitly opt-in.
+
 # Stripe sandbox Checkout (not production)
 
 The offline demo remains the default. A separate `/stripe-test` page is linked

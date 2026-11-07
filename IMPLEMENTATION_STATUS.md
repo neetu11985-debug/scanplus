@@ -1,3 +1,5 @@
+> Current release: see COMPLETION_HANDOFF.md and VERIFICATION_2026-11-07.md. They supersede older integration/readiness statements below. Default demo remains unchanged; the new sandbox profile is explicitly opt-in.
+
 # ScanPlus implementation status — November 6, 2026
 
 ## Verdict

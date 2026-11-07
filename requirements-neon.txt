@@ -1,0 +1,4 @@
+-r requirements-security.txt
+psycopg[binary,pool]==3.3.8
+psycopg-pool==3.3.3
+python-dotenv==1.2.4

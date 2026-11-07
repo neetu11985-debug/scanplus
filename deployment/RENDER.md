@@ -1,4 +1,10 @@
+> Current release: see ../COMPLETION_HANDOFF.md and ../VERIFICATION_2026-11-07.md. They supersede older integration/readiness statements below. Default demo remains unchanged; the new sandbox profile is explicitly opt-in.
+
 # Protected Render Free synthetic staging (prepared, not deployed)
+
+The later optional, authenticated database connectivity check is described in
+`../STAGING_DB_CHECK.md`. It only runs `SELECT 1`; it does not change the demo's
+in-memory storage. Runtime dependencies now include `requirements-neon.txt`.
 
 This is a private disposable demo, not production. Only displayed synthetic fixtures work. No real scans, SMS, charges, removals, provider keys, or durable history. SQLite is forced to memory and lost when the single worker restarts, sleeps, or redeploys. Render Free sleeps when idle and may take time to wake. No retention or availability guarantee. No persistent disk, paid add-ons, or custom DNS are needed.
 
