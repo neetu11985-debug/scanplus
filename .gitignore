@@ -1,0 +1,27 @@
+.env
+__pycache__/
+*.pyc
+.DS_Store
+.data/
+*.sqlite3
+*.sqlite3-journal
+
+# Local credentials and editor/backup copies. Never track populated values.
+*scanplus.local.properties*
+!scanplus.local.properties.example
+
+# Private runtime, test evidence, local exports and build caches.
+# Keep the public repository source-only.
+.env.*
+!.env.example
+evidence/
+*.log
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3-*
+.venv/
+venv/
+node_modules/
+.pytest_cache/

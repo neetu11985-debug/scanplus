@@ -1,0 +1,21 @@
+# ScanPlus local keys. Keep this file on this Mac, outside cloud sync.
+# Paste ONLY the values after =. Keep one setting per line. No export commands.
+# Save as plain text with this exact filename; do not add .txt or .rtf.
+# Never send this file, its backups, or a screenshot of its values to chat.
+# This file is not encrypted. Other apps running as you and backups may read it.
+
+# Leave 0 until provider setup, free allowance/costs, and live actions are approved.
+SCANPLUS_LOCAL_LIVE_TEST=0
+SCANPLUS_SEARCH_PROVIDER=serper
+SCANPLUS_LOCAL_LIVE_PORT=4175
+
+# Required: paste values from your own Twilio account and Verify service.
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_VERIFY_SERVICE_SID=
+
+# Required for the selected Serper search route.
+SERPER_API_KEY=
+
+# Leave blank unless you explicitly choose Brave instead of Serper.
+BRAVE_SEARCH_API_KEY=
