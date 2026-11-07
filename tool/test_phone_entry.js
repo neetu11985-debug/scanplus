@@ -25,6 +25,19 @@ vm.runInContext(fs.readFileSync(path.join(__dirname,'../static/app.js'),'utf8'),
   // Let the unrelated fixture-session bootstrap settle first.
   await new Promise(resolve=>setTimeout(resolve,0));
   assert.equal(requests,1,'Only the normal empty-session bootstrap may request data.');
+  assert.ok(!element('#panel').innerHTML.includes('readonly'),'The main number field must be editable.');
+  const mainPhone=element('#phone'),mainStatus=element('#entry-status'),mainForm=element('#start-form');
+  mainPhone.value='+1 202 555 0148';mainPhone.oninput();
+  assert.equal(element('#control').required,false);
+  assert.match(element('#start-submit').textContent,/Check number format only/);
+  mainForm.onsubmit({preventDefault(){},submitter:element('#start-submit')});
+  assert.equal(mainPhone.value,'');assert.match(mainStatus.textContent,/ending 0148/);
+  assert.match(mainStatus.textContent,/No online lookup/);assert.equal(requests,1);
+  mainPhone.value='2025550148';mainPhone.oninput();mainForm.onsubmit({preventDefault(){}});
+  assert.match(mainStatus.textContent,/Enter \+/);assert.equal(requests,1);
+  element('#entry-clear').onclick();assert.equal(mainPhone.value,'');assert.equal(mainStatus.textContent,'');
+  mainPhone.value='+1 (202) 555-0147';mainPhone.oninput();
+  assert.equal(element('#control').required,true);assert.match(element('#start-submit').textContent,/test verification/);
   const normalize=value=>context.normalizeLocalPhone(value);
   assert.equal(normalize('+1 (202) 555-0147'),'+12025550147');
   assert.equal(normalize('  +44 7700 900123  '),'+447700900123');
@@ -39,8 +52,8 @@ vm.runInContext(fs.readFileSync(path.join(__dirname,'../static/app.js'),'utf8'),
   element('#local-number-clear').handlers.click();assert.equal(phone.value,'');assert.equal(status.textContent,'');assert.equal(phone.focused,true);
   phone.value='+1 202 555 0148';submit();assert.match(status.textContent,/ending 0148/);
   element('#local-number-test').open=false;element('#local-number-test').handlers.toggle();assert.equal(status.textContent,'');assert.equal(phone.value,'');
-  phone.value='+1 202 555 0147';windowHandlers.pagehide();assert.equal(phone.value,'');
+  phone.value='+1 202 555 0147';mainPhone.value='+1 202 555 0148';windowHandlers.pagehide();assert.equal(phone.value,'');assert.equal(mainPhone.value,'');
   assert.equal(requests,1,'No personal input may make a network call.');
   assert.equal(prevented,3,'Submission must always suppress native form navigation.');
-  console.log('PASS: format acceptance/rejection, masking, repeated input, clear, close, page leave, no input network/storage calls.');
+  console.log('PASS: editable main field, local-only personal entry, fixture-only demo gate, format acceptance/rejection, masking, repeated input, clear, close, page leave, no input network/storage calls.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

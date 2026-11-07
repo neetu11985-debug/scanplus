@@ -10,7 +10,7 @@ from secure_admin import application, create_preview, Principal, PaidStorageGran
 
 class SecureAdminTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
+        self.temp = tempfile.TemporaryDirectory(dir=Path(tempfile.gettempdir()).resolve())
         self.now = 1000.0
         self.path = Path(self.temp.name) / 'encrypted.sqlite3'
         self.store = EncryptedStore(self.path, {1: b'1' * 32}, 1, clock=lambda: self.now)

@@ -21,7 +21,7 @@ OWNER = 'synthetic-owner-alpha'
 
 class EncryptedStoreTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(dir=Path(tempfile.gettempdir()).resolve())
         self.path = Path(self.tmp.name) / 'secure.sqlite'
         self.now = 1000.0
         self.store = self.open()
