@@ -75,7 +75,7 @@ class Handler(StripeRoutes, BaseHTTPRequestHandler):
             try:output.write(payload)
             except OSError:pass
     def get(self):
-        if self.path in ('/api/stripe/status', '/api/stripe/report'):
+        if self.path in ('/api/stripe/status', '/api/stripe/report', '/api/stripe/report/download'):
             return self.stripe_get(STORE)
         if self.path=='/api/session/status':return self.reply(200,{'active':self.session() is not None})
         if self.path=='/api/session':

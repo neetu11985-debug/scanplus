@@ -1,0 +1,18 @@
+{
+  "dependencies": {
+    "@neon/config": "^1.13.0",
+    "@neon/env": "^2.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  },
+  "name": "scanplus-neon-config",
+  "private": true,
+  "scripts": {
+    "build": "python3 tool/build.py && tsc --noEmit",
+    "test": "python3 -m unittest discover -s tests -v",
+    "test:ui": "node tool/test_live_ui.js && node tool/test_report_ui.js && node tool/test_no_sms_ui.js && node tool/test_security_ui.js && node tool/test_stripe_ui.js && node tool/test_phone_entry.js && node tool/test_pricing_ui.js",
+    "test:neon": "python3 tool/neon_smoke.py"
+  }
+}

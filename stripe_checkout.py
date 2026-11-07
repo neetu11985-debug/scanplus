@@ -159,8 +159,11 @@ class StripeCheckout:
             intent = result.get('payment_intent')
             if not isinstance(intent, str) or not re.fullmatch(r'pi_[A-Za-z0-9_]+', intent):
                 raise StripeError('Stripe payment reference is missing.')
+            if order.get('payment_ref') not in (None, intent):
+                raise StripeError('Stripe payment reference changed. Access remains locked.')
             if not self.store.claim('stripe_payment', intent, order['id'], order['expires']):
                 raise StripeError('Stripe payment was already assigned to another order.')
+            order['payment_ref'] = intent
             order['state'] = 'paid'
         elif order['state'] != 'paid' and result.get('status') == 'expired':
             order['state'] = 'expired'

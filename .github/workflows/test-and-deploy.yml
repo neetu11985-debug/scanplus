@@ -28,3 +28,7 @@ jobs:
           set -euo pipefail
           for file in static/*.js tool/*.js; do node --check "$file"; done
           for file in tool/test_*.js; do node "$file"; done
+      - name: Neon configuration and complete syntax build
+        run: |
+          npm ci
+          npm run build

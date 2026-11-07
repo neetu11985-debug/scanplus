@@ -1,0 +1,2 @@
+# Install from official PyPI; cryptography provides AES-GCM and HKDF.
+cryptography==50.0.0

@@ -30,6 +30,7 @@ function button(label, task) {
 }
 async function show() {
   actions.replaceChildren();
+  document.querySelector('#download').hidden = true;
   const session = await api('session'); csrf = session.csrf_token || '';
   if (!session.active) {
     statusBox.textContent = 'Start a synthetic session for reserved number +1 202-555-0147. No SMS is sent.';
@@ -48,6 +49,11 @@ async function show() {
       const report = await api('stripe/report');
       const output = document.querySelector('#report'); output.hidden = false;
       output.textContent = JSON.stringify(report, null, 2);
+    });
+    button('Save synthetic paid report to encrypted storage', async () => {
+      await api('stripe/report/save', {confirm_synthetic: true});
+      document.querySelector('#download').hidden = false;
+      statusBox.textContent = 'Encrypted test report saved. Download while this verified session is active. No new payment was created.';
     });
   } else if (payment.state !== 'expired') {
     button('I agree: continue to Stripe using test data only', async () => {

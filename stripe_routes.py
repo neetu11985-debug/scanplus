@@ -2,6 +2,8 @@
 import time
 from stripe_checkout import StripeCheckout, StripeError
 from providers import FixtureDiscovery
+from encrypted_storage import SecureStorageError
+import secure_reports
 
 class StripeRoutes:
     def stripe_webhook(self, store):
@@ -32,10 +34,24 @@ class StripeRoutes:
                 return self.reply(200, status)
             if status['state'] != 'paid':
                 return self.reply(403, {'error': 'Server-verified Stripe sandbox payment required.'})
+            if self.path == '/api/stripe/report/download':
+                text = secure_reports.REPORTS.download(self.sid, s, gateway.order(self.sid))
+                if text is None:
+                    return self.reply(404, {'error': 'Report unavailable. Save the paid report first.'})
+                raw = text.encode('utf-8')
+                self.send_response(200); self.headers_common()
+                self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                self.send_header('Content-Disposition', 'attachment; filename="scanplus-sandbox-report.txt"')
+                self.send_header('Content-Length', str(len(raw)))
+                self.end_headers(); self.wfile.write(raw)
+                return
             return self.reply(200, {'demo': True, 'test_mode': True, 'report_id': s['report_id'],
-                                    'providers': FixtureDiscovery().discover(), 'live_sources_checked': 0})
+                                    'providers': FixtureDiscovery().discover(), 'live_sources_checked': 0,
+                                    'encrypted_storage_available': secure_reports.enabled()})
         except StripeError as e:
             return self.reply(503, {'error': str(e)})
+        except SecureStorageError:
+            return self.reply(503, {'error': 'Encrypted report unavailable. Payment was not repeated.'})
 
     def stripe_post(self, store, session, data):
         try:
@@ -47,10 +63,23 @@ class StripeRoutes:
                     raise StripeError('Checkout price and order are server-controlled; no extra fields accepted.')
                 result = gateway.create(self.sid, session)
             elif self.path == '/api/stripe/reconcile':
+                if data:
+                    raise StripeError('No payment or owner overrides are accepted.')
                 result = gateway.reconcile(self.sid)
+            elif self.path == '/api/stripe/report/save':
+                if data != {'confirm_synthetic': True}:
+                    raise StripeError('Confirm synthetic encrypted report storage; no extra fields accepted.')
+                order = gateway.order(self.sid)
+                if not order or order.get('state') != 'paid':
+                    return self.reply(402, {'error': 'Reconcile the Stripe sandbox payment before saving.'})
+                result = secure_reports.REPORTS.fulfill(self.sid, session, order)
+                order['encrypted_report_id'] = result['report_id']
+                gateway.save(order)
             else:
                 return self.reply(404, {'error': 'Endpoint not found.'})
             return self.reply(200, result)
         except StripeError as e:
             # Commit any pending order reservation even if the remote result is uncertain.
             return self.reply(400, {'error': str(e)})
+        except SecureStorageError:
+            return self.reply(503, {'error': 'Encrypted delivery was not confirmed. Retry Save report using this session; do not pay again.'})

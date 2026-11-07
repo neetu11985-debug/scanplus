@@ -1,3 +1,5 @@
+> Current release: see COMPLETION_HANDOFF.md and VERIFICATION_2026-11-07.md. They supersede older integration/readiness statements below. Default demo remains unchanged; the new sandbox profile is explicitly opt-in.
+
 # ScanPlus — local website MVP
 
 A standalone, synthetic-data web prototype prepared November 2, 2026. Provisional brand; not a live scanning or removal service. Target launch Friday November 6 is a goal, not an established readiness claim.
@@ -148,3 +150,13 @@ used to build or test this setup.
 ## Stripe sandbox Checkout
 
 A separate [Stripe sandbox flow](STRIPE_TEST.md) is implemented at `/stripe-test`, linked from the demo. It uses hosted Stripe test Checkout, fixed server-owned $1.49 USD pricing, idempotent orders, signed webhooks, and server-verified report access. Default operation remains offline; test keys are environment-only and live keys/mode are rejected. Existing demo checkout and refunds remain separate. Automated coverage uses only mocked transport. Actual Stripe account setup, sandbox gateway validation, refunds, production authentication and launch review are still pending. No real payment or Stripe API request was made during implementation.
+
+## Neon setup preparation
+
+See [NEON_SETUP.md](NEON_SETUP.md) for the Python/Postgres adapter, exact setup
+status, build/test commands and pending authentication/deployment gates. Neon
+has not yet been deployed or live-tested from this source copy.
+
+The limited protected Render connectivity check is prepared in
+[STAGING_DB_CHECK.md](STAGING_DB_CHECK.md). A successful check confirms only
+database reachability, not encrypted customer storage or full production flow.
