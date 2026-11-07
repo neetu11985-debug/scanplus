@@ -8,7 +8,7 @@ class Element{
   set innerHTML(html){this._html=html;for(const c of this.children)c.detach();this.children=[];for(const m of html.matchAll(/id="([^"]+)"/g)){const c=new Element('#'+m[1]);elements.set(c.id,c);this.children.push(c);}if(html.includes('id="submit-removal"'))el('#submit-removal').disabled=true;}
   get innerHTML(){return this._html;}
   querySelector(selector){return selector.startsWith('#')?elements.get(selector):el(this.id+' '+selector);}
-  setAttribute(){}removeAttribute(){}focus(){}scrollIntoView(){}
+  setAttribute(){}removeAttribute(){}focus(){}scrollIntoView(options){this.lastScroll=options;}
   addEventListener(){}
 }
 const el=id=>{if(!elements.has(id))elements.set(id,new Element(id));return elements.get(id);};
@@ -32,7 +32,7 @@ function submit(){return el('#removal-consent-form').onsubmit({preventDefault(){
   assert.equal(el('#submit-removal').disabled,true);await submit();assert.equal(pending.length,0);
   el('#listing-confirm').checked=true;el('#listing-confirm').onchange();assert.equal(el('#submit-removal').disabled,true);
   el('#cancel-removal').onclick();next('/api/removal/cancel').reply({cancelled:true});await settle();
-  assert.equal(requests.filter(x=>x.url==='/api/removal').length,0);
+  assert.equal(requests.filter(x=>x.url==='/api/removal').length,0);assert.equal(el('#review-removal').lastScroll.behavior,'instant');
   await review();assert.equal(el('#listing-confirm').checked,false);assert.equal(el('#removal-authorize').checked,false);
   checkBoth();assert.equal(el('#submit-removal').disabled,false);submit();submit();assert.equal(pending.length,1);
   const body=requests.at(-1).body;assert.equal(body.authorize,true);assert.equal(body.confirm_listing,true);assert.equal(body.consent_id,'fixture-consent-token');assert.equal(body.listing_id,'listing-a');
@@ -43,7 +43,7 @@ function submit(){return el('#removal-consent-form').onsubmit({preventDefault(){
   assert.equal(el('#listing-confirm').checked,false);assert.equal(el('#removal-authorize').checked,false);assert.equal(el('#submit-removal').disabled,true);assert.match(el('#alert').textContent,/Reload the report/);
   // A late preparation response may not reopen permission after navigation.
   openReport();el('#review-removal').onclick();ctx.start();next('/api/removal/prepare').reply(preview());await settle();assert.match(el('#panel').innerHTML,/Start with your number/);
-  openReport();await review();el('#local-phone').value='+1 202 555 0147';events.pagehide();assert.equal(el('#local-phone').value,'');assert.equal(el('#panel').textContent,'');
+  openReport();await review();el('#phone').value='+1 202 555 0147';events.pagehide();assert.equal(el('#phone').value,'');assert.equal(el('#panel').textContent,'');
   events.pageshow({persisted:true});await settle();assert.match(el('#panel').innerHTML,/Start with your number/);
   assert.ok(requests.every(x=>x.url.startsWith('/api/')));
   console.log('PASS: exact escaped disclosure, two unchecked confirmations, cancellation, repeated clicks, idempotent request/status UI, stale-response navigation, failure reset, no external requests/storage, page leave/back. Offline DOM checks only.');

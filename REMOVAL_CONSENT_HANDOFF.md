@@ -4,7 +4,7 @@
 
 Prepared against `neetu11985-debug/scanplus` main commit `5b60d4181dc70d6d34e3b04d087d9ffde7a4af04`.
 
-The main phone field is now editable. Any number other than the reserved example receives only a local format check, is cleared afterward, and causes no API call. The form does not name the editable input, so native form fallback cannot serialize it. The separate browser-only input panel remains available. This is not a real scan.
+The main phone field is now editable. Any number other than the reserved example receives only a local format check, is cleared afterward, and causes no API call. The form does not name the editable input, so native form fallback cannot serialize it. The later November 7 entry-flow fix removes the duplicate browser-only panel and advances non-example entries to an explicit live-lookup-unavailable screen. See README.md for the current behavior. This is not a real scan.
 
 The synthetic report now has a separate permission screen for one fictional listing. It names the local recipient, exact reserved phone/listing data, purpose, scope, cost, retention and cancellation limits. Both confirmations start unchecked. Cancel invalidates the permission; nothing is submitted by opening the screen.
 

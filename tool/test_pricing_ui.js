@@ -23,6 +23,7 @@ class Element {
       }
     }
   }
+  querySelector(selector){return el(this.id+' '+selector);}
   addEventListener(type,fn){this.handlers[type]=fn;}
   setAttribute(){} removeAttribute(){} focus(){} scrollIntoView(){}
 }

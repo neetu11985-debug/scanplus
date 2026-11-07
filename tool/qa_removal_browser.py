@@ -37,12 +37,13 @@ async def main():
           await page.goto(origin)
           await page.locator('#phone').fill('+1 202 555 0148')
           await page.locator('#start-submit').click()
-          assert 'ending 0148' in await page.locator('#entry-status').inner_text()
-          assert await page.locator('#phone').input_value()==''
+          assert 'Live lookup is not connected' in await page.locator('#panel').inner_text()
+          assert await page.locator('input[type=tel]').count()==0
           assert not any(url==origin+'/api/start' for method,url in requests)
+          await page.locator('#availability-example').click()
           await page.locator('#phone').fill('+1 202 555 0147')
           await page.locator('#control').check()
-          await page.locator('#start-form button').click()
+          await page.locator('#start-submit').click()
           await page.locator('#code').fill('246810')
           await page.locator('#verify-form button').click()
           # An earlier viewport's fixture receipt may remain by design.
