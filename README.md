@@ -160,3 +160,18 @@ has not yet been deployed or live-tested from this source copy.
 The limited protected Render connectivity check is prepared in
 [STAGING_DB_CHECK.md](STAGING_DB_CHECK.md). A successful check confirms only
 database reachability, not encrypted customer storage or full production flow.
+
+## Per-listing removal permission (synthetic preparation)
+
+See [REMOVAL_CONSENT_HANDOFF.md](REMOVAL_CONSENT_HANDOFF.md). The demo now presents
+an exact per-listing permission screen before its local fixture adapter call.
+Consent is session/report/listing/version-bound, short-lived and cancellable before
+submission. Repeated requests return one receipt; status polling never invents
+verified removal. No live broker API is enabled. Real report guides are unchanged.
+Run the full Python/build/UI checks, including `node tool/test_removal_ui.js`.
+The supplied optional browser QA still needs successful execution in a supported
+browser environment before visual or production readiness can be claimed.
+
+The main number box is editable too. Non-example entries are checked only in the
+browser and then cleared, without a backend call or live lookup. The reserved
+example remains the only route into the synthetic demo.

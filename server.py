@@ -5,7 +5,8 @@ from pathlib import Path
 from http.cookies import SimpleCookie, CookieError
 from socketserver import TCPServer
 from uuid import uuid4
-from providers import FixtureDiscovery, FixtureRemoval
+from providers import FixtureDiscovery
+import removal_requests
 from payments import DemoGateway
 from stripe_routes import StripeRoutes
 from pricing import LookupPricing
@@ -97,6 +98,10 @@ class Handler(StripeRoutes, BaseHTTPRequestHandler):
                 return self.reply(403,{'error':'Complete current test verification and checkout first.'})
             if s.get('receipt',{}).get('payment_id'):DemoHistory(STORE).save(s['phone_ref'],s['receipt'])
             report={'demo':True,'phone':next((p for p in FIXTURE_PHONES if digest(p)==s['phone_ref']),None),'report_id':s['report_id'],'providers':FixtureDiscovery().discover(),'removal':s['removal'],'refund':s.get('refund')}
+            report['removal_listing']=removal_requests.fixture_listing(s)
+            report['removal_request']=removal_requests.public_request(s)
+            # Old demo polling claims are not receipts or removal evidence.
+            report['removal']=report['removal_request']['status'] if report['removal_request'] else 'not_requested'
             if self.path=='/api/export':
                 raw=json.dumps(report).encode();self.send_response(200);self.headers_common();self.send_header('Content-Type','application/json');self.send_header('Content-Disposition','attachment; filename=scanplus-demo-report.json');self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw);return
             return self.reply(200,report)
@@ -178,15 +183,14 @@ class Handler(StripeRoutes, BaseHTTPRequestHandler):
             except ValueError as e:return self.reply(409 if data.get('confirm') is True else 400,{'error':str(e)})
             s['refund']=result;self.save(s);return self.reply(200,result)
         if not s['paid']:return self.reply(403,{'error':'Test checkout is required.'})
-        if self.path=='/api/removal':
-            if data.get('provider')!='fixture':return self.reply(409,{'error':'Live removal is disabled. Follow official instructions.'})
-            if s['removal']=='not_requested':
-                if data.get('authorize') is not True:return self.reply(400,{'error':'Explicit simulation authorization required.'})
-                s['removal']=FixtureRemoval().submit('fixture',True)['status'];self.save(s)
-            return self.reply(200,{'status':s['removal'],'demo':True})
-        if self.path=='/api/removal/status':
-            s['removal']={'request_submitted':'pending','pending':'removal_confirmed'}.get(s['removal'],s['removal']);self.save(s)
-            return self.reply(200,{'status':s['removal'],'demo':True})
+        removal_routes={'/api/removal/prepare':removal_requests.prepare,
+                        '/api/removal/cancel':removal_requests.cancel,
+                        '/api/removal':removal_requests.submit,
+                        '/api/removal/status':removal_requests.status}
+        if self.path in removal_routes:
+            try:result=removal_routes[self.path](s,data)
+            except removal_requests.RemovalError as exc:return self.reply(exc.status,{'error':str(exc)})
+            self.save(s);return self.reply(200,result)
         return self.reply(404,{'error':'Endpoint not found.'})
 
 if __name__=='__main__':

@@ -34,7 +34,8 @@ class DiscoveryAdapter(Protocol):
     def discover(self) -> list[dict]: ...
 
 class RemovalAdapter(Protocol):
-    def submit(self, provider_id: str, authorized: bool) -> dict: ...
+    def submit(self, provider_id: str, authorized: bool, *, request_id: str,
+               listing_id: str, payload: dict) -> dict: ...
 
 class FixtureDiscovery:
     def discover(self):
@@ -44,14 +45,18 @@ class FixtureDiscovery:
                 for i, p in enumerate(CATALOG)]
 
 class DisabledRemoval:
-    def submit(self, provider_id, authorized):
+    def submit(self, provider_id, authorized, *, request_id, listing_id, payload):
         if not authorized:
             raise ValueError('Explicit authorization is required.')
         raise ValueError('Live removal integrations are disabled. Use official guided actions.')
 
 class FixtureRemoval:
-    """Only a synthetic provider exercises automatic submission and polling."""
-    def submit(self, provider_id, authorized):
-        if provider_id != 'fixture' or not authorized:
+    """Local receipt only. No network and no claim of verified deletion."""
+    def submit(self, provider_id, authorized, *, request_id, listing_id, payload):
+        if (provider_id != 'fixture' or authorized is not True or
+                not request_id.startswith('fixture-') or not listing_id or
+                set(payload) != {'phone', 'listing_id'} or
+                payload['phone'] not in ('+12025550147', '+12025550148') or
+                payload['listing_id'] != listing_id):
             raise ValueError('Only the authorized synthetic provider is supported.')
-        return {'status': 'request_submitted', 'demo': True}
+        return {'status': 'request_submitted', 'demo': True, 'receipt': request_id}

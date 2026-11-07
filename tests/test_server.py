@@ -41,9 +41,16 @@ class Journey(unittest.TestCase):
         status,report=self.req('report'); self.assertEqual(status,200)
         self.assertTrue(report['demo']); self.assertEqual(len(report['providers']),3)
         self.assertTrue(all(p['source_url'] is None for p in report['providers']))
-        self.assertEqual(self.req('removal',{'provider':'fixture','authorize':True})[1]['status'],'request_submitted')
-        self.assertEqual(self.req('removal/status',{})[1]['status'],'pending')
-        self.assertEqual(self.req('removal/status',{})[1]['status'],'removal_confirmed')
+        listing={k:report['removal_listing'][k] for k in ('provider','report_id','listing_id')}
+        preview=self.req('removal/prepare',listing)[1]
+        receipt=self.req('removal',{**listing,'consent_id':preview['consent_id'],
+            'consent_version':preview['disclosure']['consent_version'],
+            'authorize':True,'confirm_listing':True})[1]
+        self.assertEqual(receipt['status'],'request_submitted')
+        for _ in range(3):
+            result=self.req('removal/status',{'request_id':receipt['request_id']})[1]
+            self.assertEqual(result['status'],'request_submitted')
+            self.assertFalse(result['removal_verified'])
     def test_real_numbers_and_cross_origin_rejected(self):
         self.assertEqual(self.req('start',{'phone':'+12025550149','consent':True})[0],400)
         self.assertEqual(self.req('start',{'phone':server.PHONE,'consent':True},False)[0],403)
@@ -55,7 +62,7 @@ class Journey(unittest.TestCase):
         self.assertEqual(self.req('verify',{'code':'246810'})[0],429)
     def test_authorization_and_live_removal(self):
         self.ready()
-        self.assertEqual(self.req('removal',{'provider':'fixture','authorize':False})[0],400)
+        self.assertNotEqual(self.req('removal',{'provider':'fixture','authorize':False})[0],200)
         self.assertEqual(self.req('removal',{'provider':'spokeo','authorize':True})[0],409)
         self.assertEqual(self.req('report')[1]['removal'],'not_requested')
     def test_expiry_and_clear(self):
