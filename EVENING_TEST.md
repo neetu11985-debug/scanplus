@@ -9,14 +9,14 @@ This is a local synthetic demo, not a real lookup. No card, real number or SMS i
    ```
 2. Click **Try the demo**. Confirm the fixed demo number +1 (202) 555-0147 and check the declaration.
 3. Continue. Enter **000000** first: expect a clear incorrect-code error. Enter **246810** to continue.
-4. Check that checkout displays a $0.99 intended launch price and **$0 charged today**. Accept the demo declaration and complete checkout. No payment details are collected.
+4. Check that checkout displays a $1.49 intended launch price and **$0 charged today**. Accept the demo declaration and complete checkout. No payment details are collected.
 5. Confirm the report shows **2 example listings**, **0 live sources checked**, and TruePeopleSearch as **not checked**. No result is a finding about a real person.
 6. Expand a provider guide. Confirm instructions and the unverified candidate-link notice are readable. Opening a guide leaves ScanPlus and shares no phone number automatically; do not submit real personal data during this demo.
 7. Expand **Explore automatic removal · synthetic provider**. Try submitting without authorization: expect an error. Check the authorization, submit, and observe **request submitted**. Check status once for **pending**, then again for **Simulated completion — nothing submitted or removed**. None of these actions contacts a real broker.
 8. Optionally export JSON; it should contain only synthetic data and no real listing links. A downloaded file stays on your Mac until you delete it.
 9. Click **Clear session**. Expect the starting form. On a phone-sized browser window, repeat the main path and check readable text, no horizontal scroll and easy controls. This loopback server is intentionally unavailable to a separate physical phone.
 
-Discuss after the test: Is the value of the report clear? Which step feels confusing? Are the mock/live distinctions obvious? Is $0.99 worth a bounded report and helpful removal guidance? Keep feedback focused on the one web product.
+Discuss after the test: Is the value of the report clear? Which step feels confusing? Are the mock/live distinctions obvious? Is $1.49 worth a bounded report and helpful removal guidance? Keep feedback focused on the one web product.
 
 ## Current verification
 

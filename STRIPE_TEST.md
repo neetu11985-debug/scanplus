@@ -11,7 +11,7 @@ cannot be enabled with a live secret key or `SCANPLUS_MODE=live`.
 - Standard-library HTTPS transport to Stripe's fixed API host. API version pinned
   to `2026-10-28.endive`. No redirects, eight-second timeout, bounded responses,
   and generic errors without credentials or provider response bodies.
-- Server-owned one-time **99 cents USD** price; card payments only; no coupons,
+- Server-owned one-time **149 cents USD** price; card payments only; no coupons,
   subscriptions, price fields or order IDs accepted from the browser.
 - A deterministic opaque order/idempotency key per synthetic session. Local
   pending orders survive network failures. Retry the same checkout after an
@@ -150,7 +150,7 @@ fields appear, use synthetic values such as `test@example.com`.
    by this change.
 2. Open `/stripe-test`, confirm the synthetic/test disclosures, complete the
    fixed fixture verification and open hosted Checkout. Confirm Stripe displays
-   test mode and the one-time **$0.99 USD** test amount before entering the
+   test mode and the one-time **$1.49 USD** test amount before entering the
    official decline fixture.
 3. Submit the fixture once. Expected: Stripe shows a declined-payment message;
    the Checkout remains unpaid. Do not substitute a real card or switch modes.

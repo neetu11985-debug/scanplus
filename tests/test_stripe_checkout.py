@@ -26,7 +26,7 @@ class FakeStripe:
         if self.fail: raise StripeError('Fixture timeout; outcome uncertain.')
         if method == 'POST':
             self.result = {'id': 'cs_test_fixture', 'object': 'checkout.session', 'livemode': False,
-                'mode': 'payment', 'amount_total': 99, 'currency': 'usd',
+                'mode': 'payment', 'amount_total': int(fields['line_items[0][price_data][unit_amount]']), 'currency': 'usd',
                 'client_reference_id': fields['client_reference_id'],
                 'metadata': {'scanplus_order': fields['metadata[scanplus_order]']},
                 'status': 'open', 'payment_status': 'unpaid', 'payment_intent': None,
@@ -53,9 +53,32 @@ class StripeTests(unittest.TestCase):
             with self.subTest(change=change), patch.dict(os.environ, change), self.assertRaises(StripeError): StripeCheckout(self.store, self.fake)
     def test_create_is_fixed_price_test_only_and_idempotent(self):
         result = self.create(); self.assertEqual(result, self.create()); self.assertEqual(len(self.fake.calls), 1)
-        fields = self.fake.calls[0][2]; self.assertEqual(fields['line_items[0][price_data][unit_amount]'], '99')
+        fields = self.fake.calls[0][2]; self.assertEqual(fields['line_items[0][price_data][unit_amount]'], '149')
         self.assertEqual(fields['payment_method_types[0]'], 'card'); self.assertEqual(self.gateway.status('owner')['state'], 'pending')
         self.assertNotIn('phone', str(fields)); self.assertNotIn('customer_email', fields)
+    def test_price_is_pinned_across_configuration_changes(self):
+        self.create()
+        with patch('stripe_checkout.LOOKUP_PRICE_CENTS', 199):
+            self.fake.paid()
+            with self.store.transaction(): self.gateway.reconcile('owner')
+            self.assertEqual(self.gateway.status('owner')['amount_cents'], 149)
+            self.assertEqual(self.gateway.status('owner')['state'], 'paid')
+
+    def test_legacy_order_retry_and_fulfillment_keep_99_cent_price(self):
+        self.create()
+        order = self.gateway.order('owner')
+        del order['amount_cents']
+        order['checkout_id'] = None
+        order.pop('url')
+        with self.store.transaction(): self.gateway.save(order)
+        self.create()
+        self.assertEqual(self.fake.calls[-1][2]['line_items[0][price_data][unit_amount]'], '99')
+        self.fake.paid()
+        with self.store.transaction(): self.gateway.webhook(*signed(self.event()))
+        self.assertEqual(self.gateway.status('owner')['amount_cents'], 99)
+        self.assertEqual(self.gateway.status('owner')['state'], 'paid')
+        self.assertNotIn('amount_cents', self.gateway.order('owner'))
+
     def test_unverified_rejected_without_call(self):
         self.session['verified'] = False
         with self.assertRaises(StripeError): self.create()
@@ -86,7 +109,7 @@ class StripeTests(unittest.TestCase):
         self.assertEqual(self.gateway.status('owner')['state'], 'paid')
     def test_mismatched_fields_never_fulfill(self):
         self.create(); self.fake.paid(); original=copy.deepcopy(self.fake.result)
-        for change in ({'amount_total':1},{'amount_total':True},{'currency':'eur'},{'livemode':True},{'mode':'subscription'},{'client_reference_id':'other'},{'metadata':{}},{'id':'cs_test_other'},{'id':None},{'payment_intent':None}):
+        for change in ({'amount_total':99},{'amount_total':1},{'amount_total':True},{'currency':'eur'},{'livemode':True},{'mode':'subscription'},{'client_reference_id':'other'},{'metadata':{}},{'id':'cs_test_other'},{'id':None},{'payment_intent':None}):
             self.fake.result=dict(original,**change)
             with self.subTest(change=change), self.assertRaises(StripeError):
                 with self.store.transaction(): self.gateway.reconcile('owner')

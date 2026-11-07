@@ -48,7 +48,7 @@ const next=url=>{
   assert.notEqual(index,-1,'Expected request '+url);
   return pending.splice(index,1)[0];
 };
-const quote=(discount=0,code=null,locked=false)=>({list_price_cents:99,discount_cents:discount,amount_cents:99-discount,
+const quote=(discount=0,code=null,locked=false)=>({list_price_cents:149,discount_cents:discount,amount_cents:149-discount,
   currency:'USD',billing:'one_time',coupon_code:code,charged_cents:0,mode:'test',locked});
 function submit(){return el('#checkout-form').onsubmit({preventDefault(){}});}
 function edit(code){el('#coupon-code').value=code;el('#coupon-code').oninput();}
@@ -59,8 +59,8 @@ async function openCheckout(){
 (async()=>{
   await settle();
   await openCheckout();
-  assert.equal(el('#lookup-price').textContent,'$0.99');
-  assert.equal(el('#lookup-total').textContent,'$0.99');
+  assert.equal(el('#lookup-price').textContent,'$1.49');
+  assert.equal(el('#lookup-total').textContent,'$1.49');
   assert.equal(el('#coupon-discount-row').hidden,true);
   assert.equal(el('#complete-checkout').disabled,false);
 
@@ -71,7 +71,7 @@ async function openCheckout(){
   assert.equal(el('#coupon-code').disabled,true);
   const applied=next('/api/quote');assert.equal(applied.body.coupon_code,'fixture');
   applied.reply(quote(24,'FIXTURE'));await settle();
-  assert.equal(el('#lookup-total').textContent,'$0.75');
+  assert.equal(el('#lookup-total').textContent,'$1.25');
   assert.equal(el('#coupon-discount').textContent,'−$0.24');
   assert.equal(el('#coupon-discount-row').hidden,false);
   assert.match(el('#coupon-status').textContent,/Code applied: FIXTURE/);
@@ -89,7 +89,7 @@ async function openCheckout(){
   const cleared=next('/api/quote');assert.equal(cleared.body.coupon_code,'');
   cleared.reply(quote());await settle();
   assert.equal(el('#coupon-code').value,'');
-  assert.equal(el('#lookup-total').textContent,'$0.99');
+  assert.equal(el('#lookup-total').textContent,'$1.49');
   el('#terms').checked=true;
   const completion=submit();await submit();
   assert.equal(pending.length,1,'Double submission must not create a second checkout request.');
@@ -102,7 +102,7 @@ async function openCheckout(){
   context.checkout();
   const abandoned=next('/api/quote');
   el('#panel').innerHTML='<h3>Cleared session</h3>';
-  abandoned.reply(quote(99,'FIXTURE'));await settle();
+  abandoned.reply(quote(149,'FIXTURE'));await settle();
   assert.equal(el('#panel').innerHTML,'<h3>Cleared session</h3>','Late quote must not replace a new screen.');
 
   await openCheckout();el('#terms').checked=true;

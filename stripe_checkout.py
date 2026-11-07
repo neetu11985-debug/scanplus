@@ -93,6 +93,7 @@ class StripeCheckout:
         self.transport = request if transport is None else transport
         self.key, self.secret, self.origin = settings()
 
+    # Orders predating price snapshots were fixed at 99 cents. Never reprice them.
     def order(self, sid):
         return self.store.get('stripe_order', sid, sid)
 
@@ -108,6 +109,7 @@ class StripeCheckout:
             order_id = hashlib.sha256(('stripe-test:' + sid + ':' + session['report_id']).encode()).hexdigest()
             order = {'id': order_id, 'owner': sid, 'created': time.time(),
                      'expires': min(session['expires'], time.time() + ORDER_TTL),
+                     'amount_cents': LOOKUP_PRICE_CENTS,
                      'origin': self.origin, 'state': 'pending', 'checkout_id': None}
             self.save(order)
         if time.time() - order['created'] >= ORDER_TTL or order['origin'] != self.origin:
@@ -121,7 +123,7 @@ class StripeCheckout:
         fields = {'mode': 'payment', 'payment_method_types[0]': 'card',
                   'line_items[0][quantity]': '1',
                   'line_items[0][price_data][currency]': 'usd',
-                  'line_items[0][price_data][unit_amount]': str(LOOKUP_PRICE_CENTS),
+                  'line_items[0][price_data][unit_amount]': str(order.get('amount_cents', 99)),
                   'line_items[0][price_data][product_data][name]': 'ScanPlus synthetic report - TEST ONLY',
                   'client_reference_id': order['id'], 'metadata[scanplus_order]': order['id'],
                   'success_url': order['origin'] + '/stripe-test#returned',
@@ -145,7 +147,7 @@ class StripeCheckout:
             not isinstance(result.get('id'), str) or
             not re.fullmatch(r'cs_test_[A-Za-z0-9_]+', result['id']) or
             result.get('livemode') is not False or result.get('mode') != 'payment' or
-            type(result.get('amount_total')) is not int or result['amount_total'] != LOOKUP_PRICE_CENTS or
+            type(result.get('amount_total')) is not int or result['amount_total'] != order.get('amount_cents', 99) or
             result.get('currency') != 'usd' or result.get('client_reference_id') != order['id'] or
             not isinstance(result.get('metadata'), dict) or result['metadata'].get('scanplus_order') != order['id'] or
             (order.get('checkout_id') and result['id'] != order['checkout_id'])):
@@ -174,7 +176,7 @@ class StripeCheckout:
     def status(self, sid):
         order = self.order(sid)
         return {'state': order['state'] if order else 'not_started', 'test_mode': True,
-                'amount_cents': LOOKUP_PRICE_CENTS, 'currency': 'USD', 'charged_cents': 0}
+                'amount_cents': order.get('amount_cents', 99) if order else LOOKUP_PRICE_CENTS, 'currency': 'USD', 'charged_cents': 0}
 
     def webhook(self, raw, signature):
         event = verify_event(raw, signature, self.secret)

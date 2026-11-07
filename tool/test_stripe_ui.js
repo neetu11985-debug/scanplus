@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync('static/stripe-test.js', 'utf8');
 function node() { return {textContent:'', hidden:true, disabled:false, children:[], append(n){this.children.push(n);}, replaceChildren(){this.children=[];}}; }
-function harness({verified=true, state='pending', hash='', failed=false, url='https://checkout.stripe.com/c/pay/cs_test_fixture'}={}) {
+function harness({verified=true, state='pending', amount=149, hash='', failed=false, url='https://checkout.stripe.com/c/pay/cs_test_fixture'}={}) {
   const nodes = Object.fromEntries(['#status','#error','#actions','#report'].map(id=>[id,node()]));
   const calls=[], redirects=[];
   const context={URL,AbortController,setTimeout,clearTimeout,
@@ -15,9 +15,9 @@ function harness({verified=true, state='pending', hash='', failed=false, url='ht
       calls.push({path,options});
       let data={};let ok=true;
       if(path==='/api/session')data={active:true,verified,csrf_token:'fixture-csrf'};
-      if(path==='/api/stripe/status') {data={state};if(failed){ok=false;data={error:'Sandbox disabled.'};}}
+      if(path==='/api/stripe/status') {data={state,amount_cents:amount};if(failed){ok=false;data={error:'Sandbox disabled.'};}}
       if(path==='/api/stripe/checkout')data={state:'pending',checkout_url:url};
-      if(path==='/api/stripe/reconcile'){state='paid';data={state};}
+      if(path==='/api/stripe/reconcile'){state='paid';data={state,amount_cents:amount};}
       if(path==='/api/stripe/report')data={demo:true,text:'<script>untrusted</script>'};
       return {ok,json:async()=>data};
     }};
@@ -26,7 +26,9 @@ function harness({verified=true, state='pending', hash='', failed=false, url='ht
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{
-  let h=harness({hash:'#returned'});await tick();
+  let h=harness();await tick();assert.match(h.nodes['#status'].textContent,/Test price \$1\.49 USD/);
+  h=harness({amount:99});await tick();assert.match(h.nodes['#status'].textContent,/Test price \$0\.99 USD/);
+  h=harness({hash:'#returned'});await tick();
   assert.match(h.nodes['#status'].textContent,/Return alone proves nothing/);
   assert.equal(h.calls.filter(c=>c.path.includes('reconcile')||c.path.includes('report')||c.path.includes('checkout')).length,0);
   const checkout=h.buttons()[0];const one=checkout.onclick();const two=checkout.onclick();await Promise.all([one,two]);

@@ -3,7 +3,7 @@ from collections.abc import Mapping
 import re
 from types import MappingProxyType
 
-LOOKUP_PRICE_CENTS = 99
+LOOKUP_PRICE_CENTS = 149
 CURRENCY = 'USD'
 COUPON_ERROR = 'Coupon code is invalid or unavailable.'
 
@@ -18,7 +18,7 @@ def normalize_coupon(code):
 
 
 class LookupPricing:
-    """Copy trusted server configuration. Values are whole-cent discounts, 0..99.
+    """Copy trusted server configuration. Values are whole-cent discounts, 0..LOOKUP_PRICE_CENTS.
 
     No code is enabled by default. A caller cannot supply a price or a discount.
     Configuration injection is for local tests until actual offers are approved.
@@ -34,7 +34,7 @@ class LookupPricing:
             if not code or code in configured:
                 raise ValueError('Coupon configuration needs unique, nonempty codes.')
             if type(discount) is not int or not 0 <= discount <= LOOKUP_PRICE_CENTS:
-                raise ValueError('Coupon discounts must be whole cents from 0 to 99.')
+                raise ValueError(f'Coupon discounts must be whole cents from 0 to {LOOKUP_PRICE_CENTS}.')
             configured[code] = discount
         self._coupons = MappingProxyType(configured)
 

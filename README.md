@@ -52,9 +52,11 @@ Two example listings, one unqueried source, zero live sources checked. No real l
 
 Only a fictional provider can submit a simulated request. State progression: not requested → request submitted → pending → removal confirmed. All labels retain demo context. Real adapters must establish official authorization, per-listing match confirmation and explicit customer consent. Phone possession does not prove a historical/recycled/household listing belongs to the customer. CAPTCHA, identity and email verification must remain guided customer actions. No bypasses. PeopleConnect is not in this catalog: name-search suppression is not proof of phone-search removal. Its [terms](https://peopleconnect.us/terms-of-use/) restrict the suppression tool to personal non-commercial use and prohibit commercial/third-party service automation; do not add a paid connector absent separate permission.
 
-Listings are not evidence of a spam caller's source. No promise of comprehensive coverage, guaranteed deletion or fewer calls. Self-service opt-outs are usually free; the intended $0.99 one-time price must describe bounded discovery/report convenience, not paid access to free opt-outs.
+Listings are not evidence of a spam caller's source. No promise of comprehensive coverage, guaranteed deletion or fewer calls. Self-service opt-outs are usually free; the intended $1.49 one-time price must describe bounded discovery/report convenience, not paid access to free opt-outs.
 
 ## Deployment choices and unresolved hosting
+
+Protected disposable Render Free staging is prepared in [deployment/RENDER.md](deployment/RENDER.md). It requires an owner-set private login, forces synthetic-only operation and disables Stripe. It is not yet deployed; no online or production readiness is claimed.
 
 Keep OwnlyAI and aiclubusa.co unchanged. Use a separate product domain/directory chosen with Rajesh. No public deployment, account creation, payment or credential creation was performed.
 
@@ -72,7 +74,7 @@ GoDaddy Poynt Collect is a candidate custom checkout; developer/merchant test se
 - Establish permitted discovery access, source coverage and costs. Obtain explicit disclosure/consent before sending a phone to a search provider. Define match needs confirmation, not found in checked sources, and source unavailable separately. Show exact source links and timestamps; do not show unrelated household history.
 - Validate each official removal flow. Enable automation only with a supported permitted API and explicit per-listing authorization; otherwise use guides. Verify removal independently of submission.
 - Merchant onboarding/terms and production secrets require the owner's involvement. Implement signed server-side callbacks, amount/currency/order validation, duplicate/replayed callback handling, idempotency and reconciled order state. Test success, decline, cancellation, duplicate callback, timeout and refund in the real gateway sandbox. Charge only for an available service; plan no-result/unavailable refunds clearly.
-- Finalize honest $0.99 scope and unit economics, refund/support/privacy/retention/deletion policies. Review recycled/shared number handling. Confirm production TLS, cookie/proxy configuration, approved sensitive-data storage, host concurrency/limits, backups and retention scheduling. The local synthetic foundation supplies CSRF, SQLite state and request limits; real integration behavior remains unqualified.
+- Finalize honest $1.49 scope and unit economics, refund/support/privacy/retention/deletion policies. Review recycled/shared number handling. Confirm production TLS, cookie/proxy configuration, approved sensitive-data storage, host concurrency/limits, backups and retention scheduling. The local synthetic foundation supplies CSRF, SQLite state and request limits; real integration behavior remains unqualified.
 - Repeat desktop/mobile and accessibility checks against the final production build; staging review, explicit publishing decision, then limited monitored launch. No claim of readiness until these gates pass.
 
 ## Adapted project skills
@@ -129,7 +131,7 @@ A customer can mark a listing as theirs/not theirs, or record that they manually
 
 No supported, permitted no-paid-services removal API was verified. Current automated removal count remains zero. Official destinations are confirmed from primary registry filings; current form interactions are not independently verified. Follow-up checks and CAPTCHA/email/phone/identity steps remain manual.
 
-New synthetic checkouts now quote **$0.99 USD, one time**, with optional server-owned coupon mechanics and **$0 actually charged**. No active code or invented offer is included. Old receipts remain unchanged. See `PRICING.md`.
+New synthetic checkouts now quote **$1.49 USD, one time**, with optional server-owned coupon mechanics and **$0 actually charged**. No active code or invented offer is included. Old receipts remain unchanged. See `PRICING.md`.
 
 See `IMPLEMENTATION_STATUS.md` for delivered behavior, exact local evidence and remaining live-testing gates. Run the full regression suite plus `node tool/test_pricing_ui.js` and `node tool/test_report_ui.js`. No provider setup, credentials, real query/SMS, removal submission, payment, hosting migration or deployment was performed.
 
@@ -145,4 +147,4 @@ used to build or test this setup.
 
 ## Stripe sandbox Checkout
 
-A separate [Stripe sandbox flow](STRIPE_TEST.md) is implemented at `/stripe-test`, linked from the demo. It uses hosted Stripe test Checkout, fixed server-owned $0.99 USD pricing, idempotent orders, signed webhooks, and server-verified report access. Default operation remains offline; test keys are environment-only and live keys/mode are rejected. Existing demo checkout and refunds remain separate. Automated coverage uses only mocked transport. Actual Stripe account setup, sandbox gateway validation, refunds, production authentication and launch review are still pending. No real payment or Stripe API request was made during implementation.
+A separate [Stripe sandbox flow](STRIPE_TEST.md) is implemented at `/stripe-test`, linked from the demo. It uses hosted Stripe test Checkout, fixed server-owned $1.49 USD pricing, idempotent orders, signed webhooks, and server-verified report access. Default operation remains offline; test keys are environment-only and live keys/mode are rejected. Existing demo checkout and refunds remain separate. Automated coverage uses only mocked transport. Actual Stripe account setup, sandbox gateway validation, refunds, production authentication and launch review are still pending. No real payment or Stripe API request was made during implementation.

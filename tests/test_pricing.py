@@ -15,25 +15,25 @@ import test_server
 
 
 class Pricing(unittest.TestCase):
-    def test_default_is_99_cent_one_time_usd_without_coupon(self):
+    def test_default_is_149_cent_one_time_usd_without_coupon(self):
         result = LookupPricing().quote()
-        self.assertEqual(result, dict(list_price_cents=99, discount_cents=0, amount_cents=99,
+        self.assertEqual(result, dict(list_price_cents=149, discount_cents=0, amount_cents=149,
                                      currency='USD', billing='one_time', coupon_code=None))
         self.assertEqual(LookupPricing().quote('  '), result)
         with self.assertRaises(ValueError):
             LookupPricing().quote('NOT-AN-OFFER')
 
     def test_configured_discounts_are_normalized_and_bounded(self):
-        pricing = LookupPricing({'FIXTURE-ZERO': 0, 'fixture-part': 25, 'FIXTURE-FULL': 99})
-        for code, amount in [('fixture-zero', 99), (' fixture-part ', 74), ('FIXTURE-FULL', 0)]:
+        pricing = LookupPricing({'FIXTURE-ZERO': 0, 'fixture-part': 25, 'FIXTURE-FULL': 149})
+        for code, amount in [('fixture-zero', 149), (' fixture-part ', 124), ('FIXTURE-FULL', 0)]:
             with self.subTest(code=code):
                 quote = pricing.quote(code)
                 self.assertEqual(quote['amount_cents'], amount)
-                self.assertEqual(quote['discount_cents'] + amount, 99)
+                self.assertEqual(quote['discount_cents'] + amount, 149)
                 self.assertEqual(quote['coupon_code'], code.strip().upper())
 
     def test_invalid_configuration_fails_closed(self):
-        bad = [[], '', {'': 1}, {'INVALID CODE': 1}, {'A': -1}, {'A': 100},
+        bad = [[], '', {'': 1}, {'INVALID CODE': 1}, {'A': -1}, {'A': 150},
                {'A': True}, {'A': 1.5}, {'A': '25'}, {'A': None}, {'A': 1, ' a ': 2}]
         for config in bad:
             with self.subTest(config=config), self.assertRaises(ValueError):
@@ -47,12 +47,12 @@ class Pricing(unittest.TestCase):
     def test_configuration_and_return_values_are_defensive_copies(self):
         source = {'FIXTURE': 20}
         pricing = LookupPricing(source)
-        source['FIXTURE'] = 99
+        source['FIXTURE'] = 149
         quote = pricing.quote('FIXTURE')
         quote['amount_cents'] = -100
-        self.assertEqual(pricing.quote('FIXTURE')['amount_cents'], 79)
+        self.assertEqual(pricing.quote('FIXTURE')['amount_cents'], 129)
         with self.assertRaises(TypeError):
-            pricing._coupons['FIXTURE'] = 99
+            pricing._coupons['FIXTURE'] = 149
 
     def test_quote_does_not_checkout_or_mutate_session(self):
         session = {'verified': True, 'paid': False}
@@ -75,7 +75,7 @@ class Pricing(unittest.TestCase):
         session = {'verified': True}
         gateway = DemoGateway(LookupPricing({'FIXTURE': 25}))
         original = gateway.checkout(session, 'fixture')
-        self.assertEqual(original['amount_cents'], 74)
+        self.assertEqual(original['amount_cents'], 124)
         self.assertEqual(original['charged_cents'], 0)
         gateway = DemoGateway()  # The original coupon no longer exists.
         for code in ('', 'UNAVAILABLE', None, {}):
@@ -83,7 +83,7 @@ class Pricing(unittest.TestCase):
         returned = gateway.checkout(session)
         returned['amount_cents'] = 1000
         self.assertEqual(session['receipt'], original)
-        self.assertEqual(gateway.quote(session)['amount_cents'], 74)
+        self.assertEqual(gateway.quote(session)['amount_cents'], 124)
         self.assertTrue(gateway.quote(session)['locked'])
         self.assertTrue(session['paid'])
 
@@ -97,6 +97,16 @@ class Pricing(unittest.TestCase):
         self.assertEqual(quote['list_price_cents'], 100)
         self.assertTrue(quote['locked'])
         self.assertEqual(gateway.checkout(session, 'UNAVAILABLE'), original)
+        self.assertEqual(session['receipt'], original)
+
+    def test_prior_99_cent_receipt_remains_immutable(self):
+        original = dict(list_price_cents=99, discount_cents=0, amount_cents=99,
+                        currency='USD', charged_cents=0, mode='test',
+                        payment_id='prior-99-cent-receipt', created_at=time.time())
+        session = {'verified': True, 'paid': True, 'receipt': original.copy()}
+        gateway = DemoGateway()
+        self.assertEqual(gateway.quote(session)['amount_cents'], 99)
+        self.assertEqual(gateway.checkout(session), original)
         self.assertEqual(session['receipt'], original)
 
     def test_real_payment_stays_disabled(self):
@@ -138,9 +148,9 @@ class PricingHTTP(unittest.TestCase):
 
     def test_quote_does_not_unlock_report_or_create_payment(self):
         self.verify()
-        status, quote = self.req('quote', {'amount_cents': 0, 'discount_cents': 99, 'currency': 'EUR'})
+        status, quote = self.req('quote', {'amount_cents': 0, 'discount_cents': 149, 'currency': 'EUR'})
         self.assertEqual(status, 200)
-        self.assertEqual((quote['amount_cents'], quote['discount_cents'], quote['currency']), (99, 0, 'USD'))
+        self.assertEqual((quote['amount_cents'], quote['discount_cents'], quote['currency']), (149, 0, 'USD'))
         self.assertEqual(self.req('report')[0], 403)
         self.assertEqual(self.req('history')[1]['payments'], [])
         self.assertFalse(self.req('session')[1]['paid'])
@@ -155,15 +165,15 @@ class PricingHTTP(unittest.TestCase):
         self.assertEqual(self.req('history')[1]['payments'], [])
         self.assertEqual(self.req('checkout', {'accept': False})[0], 400)
         status, receipt = self.req('checkout', {'accept': True, 'coupon_code': '', 'amount_cents': -1,
-                                              'discount_cents': 99, 'currency': 'EUR'})
+                                              'discount_cents': 149, 'currency': 'EUR'})
         self.assertEqual(status, 200)
-        self.assertEqual((receipt['amount_cents'], receipt['charged_cents'], receipt['currency']), (99, 0, 'USD'))
+        self.assertEqual((receipt['amount_cents'], receipt['charged_cents'], receipt['currency']), (149, 0, 'USD'))
 
     def test_coupon_quote_checkout_and_duplicate_keep_exact_receipt(self):
         self.verify()
         server.PRICING = LookupPricing({'FIXTURE': 24})
         quote = self.req('quote', {'coupon_code': ' fixture '})[1]
-        self.assertEqual((quote['amount_cents'], quote['discount_cents']), (75, 24))
+        self.assertEqual((quote['amount_cents'], quote['discount_cents']), (125, 24))
         status, first = self.req('checkout', {'accept': True, 'coupon_code': 'fixture', 'amount_cents': 0})
         self.assertEqual(status, 200)
         self.assertEqual(first['amount_cents'], quote['amount_cents'])
@@ -173,17 +183,17 @@ class PricingHTTP(unittest.TestCase):
         self.assertEqual(self.req('checkout', {'accept': True})[1], first)
         locked = self.req('quote', {'coupon_code': 'REMOVED'})[1]
         self.assertTrue(locked['locked'])
-        self.assertEqual(locked['amount_cents'], 75)
+        self.assertEqual(locked['amount_cents'], 125)
         self.assertEqual(len(self.req('history')[1]['payments']), 1)
 
     def test_checkout_revalidates_a_revoked_quote(self):
         self.verify()
-        server.PRICING = LookupPricing({'FIXTURE': 99})
+        server.PRICING = LookupPricing({'FIXTURE': 149})
         self.assertEqual(self.req('quote', {'coupon_code': 'FIXTURE'})[1]['amount_cents'], 0)
         server.PRICING = LookupPricing()
         self.assertEqual(self.req('checkout', {'accept': True, 'coupon_code': 'FIXTURE'})[0], 400)
         self.assertEqual(self.req('history')[1]['payments'], [])
-        self.assertEqual(self.req('checkout', {'accept': True})[1]['amount_cents'], 99)
+        self.assertEqual(self.req('checkout', {'accept': True})[1]['amount_cents'], 149)
 
     def test_concurrent_checkouts_issue_one_receipt(self):
         self.verify()

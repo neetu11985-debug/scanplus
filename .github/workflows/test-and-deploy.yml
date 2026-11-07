@@ -1,0 +1,30 @@
+name: Test synthetic staging
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    env:
+      SCANPLUS_DB_PATH: ':memory:'
+      PYTHONDONTWRITEBYTECODE: '1'
+      SCANPLUS_MODE: demo
+      SCANPLUS_STRIPE_TEST: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version-file: .python-version
+      - name: Build and test pinned runtime
+        run: sh deployment/render-build.sh
+      - name: JavaScript syntax and regression harnesses
+        run: |
+          set -euo pipefail
+          for file in static/*.js tool/*.js; do node --check "$file"; done
+          for file in tool/test_*.js; do node "$file"; done

@@ -37,7 +37,7 @@ class Journey(unittest.TestCase):
         self.assertEqual(self.start()[0],200)
         self.assertEqual(self.req('verify',{'code':'246810'})[0],200)
         status,payment=self.req('checkout',{'accept':True,'amount_cents':0})
-        self.assertEqual(status,200); self.assertEqual(payment['amount_cents'],99); self.assertEqual(payment['charged_cents'],0)
+        self.assertEqual(status,200); self.assertEqual(payment['amount_cents'],149); self.assertEqual(payment['charged_cents'],0)
         status,report=self.req('report'); self.assertEqual(status,200)
         self.assertTrue(report['demo']); self.assertEqual(len(report['providers']),3)
         self.assertTrue(all(p['source_url'] is None for p in report['providers']))

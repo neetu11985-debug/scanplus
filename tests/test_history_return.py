@@ -83,7 +83,7 @@ class DownloadArtifact(unittest.TestCase):
         connection.request('GET','/api/export',headers={'Cookie':self.cookie,'Origin':f'http://127.0.0.1:{self.port}'})
         response=connection.getresponse();raw=response.read();self.assertEqual(response.status,200)
         self.assertIn('attachment',response.getheader('Content-Disposition'));connection.close()
-        folder=Path(__file__).resolve().parents[1]/'evidence'/'return-journey-2026-11-03';folder.mkdir(exist_ok=True)
+        folder=Path(__file__).resolve().parents[1]/'evidence'/'return-journey-2026-11-03';folder.mkdir(parents=True, exist_ok=True)
         path=folder/f'http-export-{time.time_ns()}.json';path.write_bytes(raw)
         parsed=json.loads(path.read_text());self.assertTrue(parsed['demo']);self.assertEqual(parsed['phone'],server.PHONE)
         self.assertEqual(len(parsed['providers']),3);self.assertTrue(all(p['source_url']is None for p in parsed['providers']))

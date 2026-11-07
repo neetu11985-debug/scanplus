@@ -42,7 +42,7 @@ async function show() {
     return;
   }
   const payment = await api('stripe/status');
-  statusBox.textContent = 'Stripe sandbox: ' + payment.state + '. Test price $0.99 USD, one time; real charge $0.';
+  statusBox.textContent = 'Stripe sandbox: ' + payment.state + '. Test price $' + (payment.amount_cents / 100).toFixed(2) + ' USD, one time; real charge $0.';
   if (payment.state === 'paid') {
     button('Open server-verified synthetic report', async () => {
       const report = await api('stripe/report');

@@ -11,7 +11,7 @@ The requested local coding pass is implemented and tested with synthetic data. T
 - Readable text and JSON attachments are generated from the current session report. Export rejects missing/wrong/expired/cleared sessions, foreign origins and unsafe hosts. No automatic download or external navigation occurs.
 - Per-listing ownership confirmation/rejection and manual-request checklist are available. A recorded manual request remains unverified. IDs are bound to a unique report, so stale-tab actions cannot affect a later report. Repeated confirmation does not erase progress.
 - No real broker automation is enabled. Request submission is not deletion; opening a guide, recording a request, or receiving an empty search response cannot become verified removal.
-- $0.99 USD one-time quote, optional server-configured coupons, empty by default, and immutable idempotent demo receipts. Actual charge remains $0. No invented coupon, subscription or live gateway. Historical receipts are preserved.
+- $1.49 USD one-time quote, optional server-configured coupons, empty by default, and immutable idempotent demo receipts. Actual charge remains $0. No invented coupon, subscription or live gateway. Historical receipts are preserved.
 - No new packages or external scripts. Existing hosting and unrelated projects are unchanged.
 
 ## Official manual guide evidence

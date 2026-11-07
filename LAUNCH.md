@@ -14,7 +14,7 @@
 ## Exact owner/account/hosting gates
 
 1. Confirm GoDaddy product, Python 3.11+ with sqlite3, managed WSGI, reliable local filesystem locking, private writable DB path, HTTPS and scheduler. If SQLite is unavailable or the home is unsuitable for locking, choose the host's supported SQL persistence then adapt the small Store boundary. Do not build another persistence system before that decision. Keep aiclubusa.co untouched.
-2. Owner chooses/registers the product domain, legal merchant/support identity, and approves the actual bounded $0.99 service/refund/privacy scope.
+2. Owner chooses/registers the product domain, legal merchant/support identity, and approves the actual bounded $1.49 service/refund/privacy scope.
 3. Configure approved SMS verification service and consent/authentication. Qualify ownership/number/session binding, expiry, resend, decline/throttle/recovery and SMS abuse controls. The offline Twilio class is not an operational integration.
 4. Obtain permitted discovery access and terms; approve phone transmission/retention disclosures. Implement the real network transport only after approved setup; qualify coverage, no-match, unavailable and user match-confirmation behavior. A paid report cannot be sold as a synthetic scan.
 5. Complete Poynt developer/merchant sandbox configuration. Establish actual OAuth permissions, capture/lookup semantics and webhook authentication contract. Implement and test real sandbox success, decline, cancellation, timeout/reconciliation, duplicate callback, mismatch and refund. No invented callback signature or fake payment success.
