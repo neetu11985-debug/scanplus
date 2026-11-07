@@ -115,11 +115,27 @@ New routes: GET `/api/history`, POST `/api/history/delete`; POST `/api/refund` c
 Latest scoped evidence: `evidence/return-journey-2026-11-03/`. HTTP attachment bytes are now saved and parsed during a test; this is distinct from confirming an OS browser-download save location. Live provider, physical-device and production tests remain blocked.
 
 
-## Browser-only number-entry test — November 6
+## Single number-entry flow — November 7
 
-The workspace now offers **Enter my own number · input test only** independently of the synthetic demo. It checks an international-style +country-code number locally in the browser, shows only its final four digits after acceptance, and clears the input. Explicit clearing, closing the panel, and leaving the page also clear the entry. ScanPlus does not send it to the backend, save it in browser storage, verify ownership, or use it in synthetic reports. This is a syntax/entry test, not phone validity, reachability, or online discovery. Browser/autofill behavior outside the app is not controlled.
+There is one editable number field and one stable **Continue** action. The reserved
+example `+1 202-555-0147`, with the demo declaration checked, advances to test
+verification, $0 checkout and a synthetic report. Other valid-format numbers
+advance to an explicit **Live lookup is not connected** screen. That screen offers
+an example-demo route and a way to change the entry; it is not a real result.
 
-The backend fixture restrictions, offline Brave/Twilio contracts, and no-live-mode guard remain unchanged. A real self-lookup needs a separately authorized provider setup, disclosed phone transmission, and verified ownership before search. Run `node tool/test_phone_entry.js` for the focused input/privacy regression in addition to existing Python tests and syntax checks.
+Personal entries are validated only in the browser, cleared before the next screen,
+and never sent to the backend or written to browser storage by ScanPlus. No suffix
+is retained on the availability screen. The duplicate input-only panel has been
+removed. The number field has no name, so a native form fallback cannot serialize
+it. Format acceptance is not phone validity, reachability or ownership evidence.
+Browser/autofill behavior outside the app is not controlled.
+
+The backend fixture restrictions and no-live-mode guard remain unchanged. A real
+self-lookup still needs separately approved provider setup, disclosed phone
+transmission and verified ownership before search. `node tool/test_phone_entry.js`
+covers entry, privacy, navigation, expired verification, repeated submission,
+failed history requests and safe clearing with outstanding requests. These are
+DOM contract tests, not rendered browser proof.
 
 ## Local live self-test implementation — November 6
 
@@ -172,6 +188,6 @@ Run the full Python/build/UI checks, including `node tool/test_removal_ui.js`.
 The supplied optional browser QA still needs successful execution in a supported
 browser environment before visual or production readiness can be claimed.
 
-The main number box is editable too. Non-example entries are checked only in the
-browser and then cleared, without a backend call or live lookup. The reserved
-example remains the only route into the synthetic demo.
+The single number box is editable. Non-example entries advance to the explicit
+unavailable screen and are cleared without a backend call or live lookup. The
+reserved example remains the only route into the synthetic demo.

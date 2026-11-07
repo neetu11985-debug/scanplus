@@ -76,14 +76,16 @@ class PaidReportsTests(stripe_tests.StripeHTTPTests):
         self.assertEqual(self.encrypted._conn.execute("SELECT COUNT(*) FROM encrypted_records WHERE purpose='report'").fetchone()[0], 1)
         self.assertEqual(sum(call[0] == 'POST' for call in self.fake.calls), 1)
 
-    def test_expired_wrong_owner_wrong_price_and_real_phone_fail_before_factory(self):
+    def test_expired_wrong_owner_invalid_price_and_real_phone_fail_before_factory(self):
         self.paid()
         sid = self.sid()
         session = self.store.get('session', sid, sid)
         order = self.store.get('stripe_order', sid, sid)
         cases = [({'verified': False}, {}), ({'expires': time.time() - 1}, {}),
                  ({'phone_ref': digest('+14158675309')}, {}), ({}, {'owner': 'wrong'}),
-                 ({}, {'amount_cents': 1}), ({}, {'state': 'pending'}),
+                 ({}, {'amount_cents': 0}), ({}, {'amount_cents': -1}),
+                 ({}, {'amount_cents': True}), ({}, {'amount_cents': '149'}),
+                 ({}, {'state': 'pending'}),
                  ({}, {'payment_ref': None}), ({}, {'expires': float('nan')})]
         for change_session, change_order in cases:
             with self.subTest(change=list(change_session) + list(change_order)):
@@ -104,3 +106,30 @@ class PaidReportsTests(stripe_tests.StripeHTTPTests):
         self.assertEqual(self.call('/api/stripe/report/download')['status'], 403)
         self.start()
         self.assertEqual(self.call('/api/stripe/report/download')['status'], 403)
+
+    def test_catalog_price_change_preserves_paid_save_and_download(self):
+        self.paid()
+        # Model updated catalog imports alongside an existing paid order.
+        with patch('pricing.LOOKUP_PRICE_CENTS', 199), patch('stripe_checkout.LOOKUP_PRICE_CENTS', 199), patch('secure_reports.LOOKUP_PRICE_CENTS', 199, create=True):
+            saved = self.save_report()
+            self.assertEqual(saved['status'], 200)
+            self.assertEqual(self.call('/api/stripe/status')['body']['amount_cents'], 149)
+            self.assertEqual(self.call('/api/stripe/report/download')['status'], 200)
+            self.assertEqual(self.save_report()['body']['report_id'], saved['body']['report_id'])
+        self.assertEqual(sum(call[0] == 'POST' for call in self.fake.calls), 1)
+
+    def test_legacy_99_cent_paid_order_can_save_and_download(self):
+        self.start()
+        with patch('stripe_checkout.LOOKUP_PRICE_CENTS', 99):
+            self.assertEqual(self.call('/api/stripe/checkout', {'accept_test': True})['status'], 200)
+        sid = self.sid()
+        order = self.store.get('stripe_order', sid, sid)
+        del order['amount_cents']  # Persisted legacy schema, before price snapshots.
+        with self.store.transaction():
+            self.store.put('stripe_order', sid, sid, order['expires'], order)
+        self.fake.paid()
+        self.assertEqual(self.call('/api/stripe/reconcile', {})['body']['state'], 'paid')
+        self.assertEqual(self.call('/api/stripe/status')['body']['amount_cents'], 99)
+        self.assertEqual(self.save_report()['status'], 200)
+        self.assertEqual(self.call('/api/stripe/report/download')['status'], 200)
+        self.assertEqual(sum(call[0] == 'POST' for call in self.fake.calls), 1)

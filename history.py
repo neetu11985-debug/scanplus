@@ -22,6 +22,7 @@ class DemoHistory:
         now=time.time() if now is None else now
         if confirm is not True:raise ValueError('Confirm the test-only refund request.')
         if not isinstance(payment_id,str):raise ValueError('Choose an original synthetic payment.')
+        if not isinstance(category,str):raise ValueError('Unknown review category.')
         payment=self.store.get('demo_payment',payment_id,owner)
         if not payment:raise LookupError('Original payment not available for this verified demo user.')
         prior=self.store.get('demo_refund',payment_id,owner)

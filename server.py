@@ -177,6 +177,8 @@ class Handler(StripeRoutes, BaseHTTPRequestHandler):
                 if data.get('confirm') is not True:return self.reply(400,{'error':'Confirm deletion of your synthetic history.'})
                 history.delete(s['phone_ref']);s.pop('receipt',None);s.pop('refund',None);s['paid']=False;self.save(s)
                 return self.reply(200,{'deleted':True,'demo':True})
+            if not isinstance(data.get('category','voluntary'),str):
+                return self.reply(400,{'error':'Unknown review category.'})
             try:
                 result=history.request(s['phone_ref'],data.get('payment_id',s.get('receipt',{}).get('payment_id')),data.get('confirm'),data.get('category','voluntary'))
             except LookupError:return self.reply(404,{'error':'Original payment not available for this verified demo user.'})

@@ -58,6 +58,23 @@ class HistoryReturn(unittest.TestCase):
         self.assertTrue(all(r==results[0] for r in results))
         self.assertEqual(server.STORE.conn.execute("SELECT COUNT(*) FROM records WHERE kind='demo_refund'").fetchone()[0],1)
 
+
+    def test_malformed_refund_category_is_400_and_does_not_record_request(self):
+        self.ready()
+        for category in ([], {}, None, True, 123):
+            with self.subTest(category=category):
+                self.assertEqual(self.req('refund', {'confirm': True, 'category': category})[0], 400)
+                self.assertEqual(server.STORE.conn.execute("SELECT COUNT(*) FROM records WHERE kind='demo_refund'").fetchone()[0], 0)
+        self.assertEqual(self.req('refund', {'confirm': True})[0], 200)
+        self.assertEqual(self.req('refund', {'confirm': True, 'category': []})[0], 400)
+        self.assertEqual(server.STORE.conn.execute("SELECT COUNT(*) FROM records WHERE kind='demo_refund'").fetchone()[0], 1)
+
+    def test_refund_service_rejects_nonstring_category_before_lookup(self):
+        history = DemoHistory(server.STORE)
+        for category in ([], {}, None, True, 123):
+            with self.subTest(category=category), self.assertRaises(ValueError):
+                history.request('fixture-owner', 'fixture-payment', True, category=category)
+
 class PartialRefundBoundaries(unittest.TestCase):
     def test_exact_outside_fee_unknown_full_override_and_restart(self):
         now=time.time()

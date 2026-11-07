@@ -13,7 +13,6 @@ from threading import RLock
 import time
 
 from encrypted_storage import SecureStorageError
-from pricing import LOOKUP_PRICE_CENTS
 from providers import FixtureDiscovery
 from storage import digest
 
@@ -52,8 +51,11 @@ class SandboxReports:
                 or not isinstance(session, dict) or not isinstance(order, dict)
                 or session.get('verified') is not True
                 or order.get('owner') != sid or order.get('state') != 'paid'
-                or type(order.get('amount_cents')) is not int
-                or order['amount_cents'] != LOOKUP_PRICE_CENTS
+                # Stripe reconciles the immutable server-owned order price.
+                # Repricing the catalog must not revoke an already paid report.
+                # Orders before price snapshots used a fixed 99-cent amount.
+                or type(order.get('amount_cents', 99)) is not int
+                or order.get('amount_cents', 99) <= 0
                 or not re.fullmatch(r'cs_test_[A-Za-z0-9_]+', str(order.get('checkout_id', '')))
                 or not re.fullmatch(r'pi_[A-Za-z0-9_]+', str(order.get('payment_ref', '')))):
             raise SecureStorageError('A reconciled sandbox payment for this session is required.')

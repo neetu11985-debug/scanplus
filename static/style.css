@@ -12,3 +12,11 @@ body.report-mode .hero,body.report-mode .how,body.report-mode .workspace-intro{d
 .stripe-sandbox button{white-space:normal}
 .stripe-sandbox pre{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%;font-size:.85rem}
 .stripe-sandbox #error{color:#a02929}
+
+/* A hidden mode/consent control must stay hidden even when its class uses flex. */
+[hidden]{display:none!important}
+
+/* Keep secondary entry actions separate when Safari wraps the narrow form. */
+.entry-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;margin-top:6px}
+/* Programmatic heading focus is for reading order, not an interactive control. */
+#panel h3:focus,#removal-flow h4:focus{outline:none}
