@@ -11,10 +11,10 @@ class Element{
 const elements=new Map(),element=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
 const events={},requests=[],responses=[];let reloads=0;
 const context=vm.createContext({
- document:{querySelector:element,querySelectorAll:()=>[...elements.values()]},
+ document:{querySelector:element,querySelectorAll:()=>[...elements.values()],addEventListener(){}},
  window:{addEventListener:(type,handler)=>events[type]=handler},location:{reload(){reloads++;}},
  fetch:async(url,options)=>{requests.push({url,options});const next=responses.shift();if(!next)throw Error('Unexpected network request');return{ok:next.ok!==false,json:async()=>next.body};},
- localStorage:{setItem(){throw Error('No browser storage allowed');}},sessionStorage:{setItem(){throw Error('No browser storage allowed');}}
+ AbortController,setTimeout,clearTimeout,performance,localStorage:{setItem(){throw Error('No browser storage allowed');}},sessionStorage:{setItem(){throw Error('No browser storage allowed');}}
 });
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 const submit=id=>element(id).onsubmit({preventDefault(){}});

@@ -12,6 +12,9 @@ from pricing import LOOKUP_PRICE_CENTS
 
 API_VERSION = '2026-10-28.endive'
 ORDER_TTL = 23 * 3600  # Never retry creation after Stripe's 24h idempotency window.
+CHECKOUT_REQUEST_VERSION = 2
+# Fixed per integration, not per request: retries must send identical parameters.
+INTEGRATION_IDENTIFIER = 'scanplus-sandbox-gxarofoh'
 
 class StripeError(ValueError):
     pass
@@ -19,6 +22,24 @@ class StripeError(ValueError):
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
+
+
+def is_test_api_key(value):
+    """Accept test secret or restricted keys only; never return/log a credential."""
+    return isinstance(value, str) and re.fullmatch(r'(?:sk|rk)_test_[A-Za-z0-9_]{8,256}', value) is not None
+
+
+def new_checkout_contract():
+    """Nonsecret request snapshot; caller persists this when starting a session.
+
+    This must commit before any Checkout IO, so a later order-transaction rollback
+    cannot silently replace the original price, integration label or return origin.
+    A new request contract requires a new version, never a mutated old retry.
+    """
+    return {'request_version': CHECKOUT_REQUEST_VERSION,
+            'integration_identifier': INTEGRATION_IDENTIFIER,
+            'amount_cents': LOOKUP_PRICE_CENTS,
+            'origin': os.environ.get('SCANPLUS_STRIPE_ORIGIN', '')}
 
 
 def settings():
@@ -31,7 +52,7 @@ def settings():
         url = urlsplit(origin)
     except ValueError:
         raise StripeError('Invalid Stripe return origin.') from None
-    if not key.startswith('sk_test_') or not secret.startswith('whsec_'):
+    if not is_test_api_key(key) or not secret.startswith('whsec_'):
         raise StripeError('Stripe test credentials are not configured.')
     if (url.username or url.password or url.query or url.fragment or url.path or
         not url.hostname or (url.scheme != 'https' and not
@@ -42,7 +63,7 @@ def settings():
 
 def request(method, path, key, fields=None, idempotency_key=None):
     """Fixed HTTPS destination, bounded response, no redirect or secret/error logging."""
-    if not key.startswith('sk_test_') or not re.fullmatch(r'/v1/checkout/sessions(?:/cs_test_[A-Za-z0-9_]+)?', path):
+    if not is_test_api_key(key) or not re.fullmatch(r'/v1/checkout/sessions(?:/cs_test_[A-Za-z0-9_]+)?', path):
         raise StripeError('Unsupported Stripe test request.')
     headers = {'Authorization': 'Bearer ' + key, 'Stripe-Version': API_VERSION}
     if idempotency_key:
@@ -105,22 +126,41 @@ class StripeCheckout:
             raise StripeError('Current synthetic ownership verification required.')
         order = self.order(sid)
         if order is None:
+            contract = session.get('stripe_checkout_contract')
+            if (not isinstance(contract, dict) or
+                contract.get('request_version') != CHECKOUT_REQUEST_VERSION or
+                not isinstance(contract.get('integration_identifier'), str) or
+                not re.fullmatch(r'scanplus-sandbox-[a-z]{8}', contract['integration_identifier']) or
+                type(contract.get('amount_cents')) is not int or contract['amount_cents'] <= 0 or
+                contract.get('origin') != self.origin):
+                raise StripeError('This session has no compatible saved Stripe request contract. Check any existing outcome before starting a new test; no request was sent.')
             # Deterministic per-session idempotency, also safe if local transaction rolls back.
             order_id = hashlib.sha256(('stripe-test:' + sid + ':' + session['report_id']).encode()).hexdigest()
             order = {'id': order_id, 'owner': sid, 'created': time.time(),
                      'expires': min(session['expires'], time.time() + ORDER_TTL),
-                     'amount_cents': LOOKUP_PRICE_CENTS,
-                     'origin': self.origin, 'state': 'pending', 'checkout_id': None}
+                     'amount_cents': contract['amount_cents'],
+                     'request_version': contract['request_version'],
+                     'integration_identifier': contract['integration_identifier'],
+                     'origin': contract['origin'], 'state': 'pending', 'checkout_id': None}
             self.save(order)
         if time.time() - order['created'] >= ORDER_TTL or order['origin'] != self.origin:
             raise StripeError('Checkout configuration changed or expired. Start a new synthetic session.')
         if order['state'] == 'expired':
             raise StripeError('Stripe test checkout expired. Start a new synthetic session after checking its outcome.')
+        if order['state'] == 'failed':
+            raise StripeError('Stripe test payment failed. Check its existing outcome; no new checkout was created.')
         if order['state'] == 'paid':
             return {'state': 'paid', 'test_mode': True}
         if order.get('url'):
             return {'state': order['state'], 'checkout_url': order['url'], 'test_mode': True}
-        fields = {'mode': 'payment', 'payment_method_types[0]': 'card',
+        if (order.get('request_version') != CHECKOUT_REQUEST_VERSION or
+            not isinstance(order.get('integration_identifier'), str) or
+            not re.fullmatch(r'scanplus-sandbox-[a-z]{8}', order['integration_identifier'])):
+            # Do not change parameters on an earlier, possibly accepted idempotent
+            # request. Known sessions can still reconcile; signed webhooks can bind
+            # an unknown session. Never substitute a new order or idempotency key.
+            raise StripeError('Existing test checkout needs operator reconciliation after the integration update. No new request was sent.')
+        fields = {'mode': 'payment', 'integration_identifier': order['integration_identifier'],
                   'line_items[0][quantity]': '1',
                   'line_items[0][price_data][currency]': 'usd',
                   'line_items[0][price_data][unit_amount]': str(order.get('amount_cents', 99)),
@@ -153,8 +193,10 @@ class StripeCheckout:
             (order.get('checkout_id') and result['id'] != order['checkout_id'])):
             raise StripeError('Stripe order validation failed. Access remains locked.')
 
-    def apply(self, result, order):
+    def apply(self, result, order, *, async_failed=False):
         self.validate(result, order)
+        if async_failed and (result.get('status') != 'complete' or result.get('payment_status') != 'unpaid'):
+            raise StripeError('Invalid failed-payment event. Access remains locked.')
         if result.get('status') == 'complete' and result.get('payment_status') == 'paid':
             intent = result.get('payment_intent')
             if not isinstance(intent, str) or not re.fullmatch(r'pi_[A-Za-z0-9_]+', intent):
@@ -165,6 +207,8 @@ class StripeCheckout:
                 raise StripeError('Stripe payment was already assigned to another order.')
             order['payment_ref'] = intent
             order['state'] = 'paid'
+        elif order['state'] != 'paid' and async_failed:
+            order['state'] = 'failed'
         elif order['state'] != 'paid' and result.get('status') == 'expired':
             order['state'] = 'expired'
         self.save(order)
@@ -176,14 +220,20 @@ class StripeCheckout:
             self.apply(result, order)
         return self.status(sid)
 
-    def status(self, sid):
+    def status(self, sid, session=None):
         order = self.order(sid)
+        contract = session.get('stripe_checkout_contract') if isinstance(session, dict) else None
+        quoted_amount = (contract['amount_cents'] if isinstance(contract, dict) and
+                         type(contract.get('amount_cents')) is int and contract['amount_cents'] > 0
+                         else LOOKUP_PRICE_CENTS)
         return {'state': order['state'] if order else 'not_started', 'test_mode': True,
-                'amount_cents': order.get('amount_cents', 99) if order else LOOKUP_PRICE_CENTS, 'currency': 'USD', 'charged_cents': 0}
+                'amount_cents': order.get('amount_cents', 99) if order else quoted_amount,
+                'currency': 'USD', 'charged_cents': 0}
 
     def webhook(self, raw, signature):
         event = verify_event(raw, signature, self.secret)
-        if event.get('type') not in ('checkout.session.completed', 'checkout.session.async_payment_succeeded', 'checkout.session.expired'):
+        if event.get('type') not in ('checkout.session.completed', 'checkout.session.async_payment_succeeded',
+                                     'checkout.session.async_payment_failed', 'checkout.session.expired'):
             return {'received': True}
         obj = event.get('data', {}).get('object') if isinstance(event.get('data'), dict) else None
         if not isinstance(obj, dict):
@@ -200,6 +250,6 @@ class StripeCheckout:
         if not order.get('checkout_id'):
             # Creation may have timed out before saving the response. Bind the signed ID.
             order['checkout_id'] = obj['id']
-        self.apply(obj, order)
+        self.apply(obj, order, async_failed=event['type'] == 'checkout.session.async_payment_failed')
         self.store.put('stripe_event', event['id'], order['id'], order['expires'], {'processed': True})
         return {'received': True}

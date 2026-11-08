@@ -12,7 +12,7 @@
   "scripts": {
     "build": "python3 tool/build.py && tsc --noEmit",
     "test": "python3 -m unittest discover -s tests -v",
-    "test:ui": "node tool/test_live_ui.js && node tool/test_report_ui.js && node tool/test_no_sms_ui.js && node tool/test_security_ui.js && node tool/test_stripe_ui.js && node tool/test_phone_entry.js && node tool/test_pricing_ui.js && node tool/test_removal_ui.js",
+    "test:ui": "node tool/test_live_ui.js && node tool/test_report_ui.js && node tool/test_no_sms_ui.js && node tool/test_security_ui.js && node tool/test_stripe_ui.js && node tool/test_phone_entry.js && node tool/test_pricing_ui.js && node tool/test_removal_ui.js && node tool/test_hosted_live_ui.js && node tool/test_search_diagnostics_ui.js",
     "test:neon": "python3 tool/neon_smoke.py"
   }
 }

@@ -1,6 +1,6 @@
 """Isolated loopback-only no-SMS owner self-test, never production verification.
 Default startup is offline. Explicit approved Serper-only startup can run one
-bounded three-query scan. No Twilio operation or payment/removal route exists.
+bounded three-query scan by default, or explicitly configured repeat tests. No Twilio operation or payment/removal route exists.
 """
 import argparse
 from http.cookies import CookieError, SimpleCookie
@@ -14,7 +14,16 @@ import time
 from no_sms_scan import (BLOCKER, NoSMSSession, ScanError, load_approved_search,
                          no_sms_report_text)
 
+from scan_report_pdf import report_pdf
+from local_diagnostic_log import LocalDiagnosticLog, DiagnosticLogError
+
 ROOT = Path(__file__).resolve().parent / 'static'
+
+
+def token_matches(value, expected):
+    # Header/cookie input is untrusted. Non-ASCII strings otherwise raise in
+    # compare_digest and turn an ordinary authentication rejection into a 503.
+    return isinstance(value, str) and value.isascii() and secrets.compare_digest(value, expected)
 
 
 class NoSMSServer(ThreadingHTTPServer):
@@ -46,6 +55,12 @@ class NoSMSHandler(BaseHTTPRequestHandler):
         pass
 
     @property
+    def cookie_name(self):
+        # Browser cookies are host-scoped, not port-scoped. Distinct local test
+        # ports must not overwrite one another's session cookie.
+        return 'scanplus_no_sms_' + str(self.server.server_port) + '_sid'
+
+    @property
     def origin(self):
         return 'http://127.0.0.1:' + str(self.server.server_port)
 
@@ -71,10 +86,10 @@ class NoSMSHandler(BaseHTTPRequestHandler):
     def owns_session(self):
         try:
             cookies = SimpleCookie(self.headers.get('Cookie', ''))
-            token = cookies['scanplus_no_sms_sid'].value if 'scanplus_no_sms_sid' in cookies else ''
+            token = cookies[self.cookie_name].value if self.cookie_name in cookies else ''
         except CookieError:
             return False
-        return self.server.session is not None and secrets.compare_digest(token, self.server.session['token'])
+        return self.server.session is not None and token_matches(token, self.server.session['token'])
 
     def do_GET(self):
         self.dispatch(False)
@@ -110,11 +125,11 @@ class NoSMSHandler(BaseHTTPRequestHandler):
                 self.server.session = {'token': token, 'csrf': secrets.token_urlsafe(32),
                                        'expires': time.monotonic() + 900,
                                        'scan': NoSMSSession(self.server.search)}
-                cookie = 'scanplus_no_sms_sid=' + token + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=900'
+                cookie = self.cookie_name + '=' + token + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=900'
             elif not self.owns_session():
                 return self.reply(409, {'error': 'This single-user test is already open in another browser session. Use that session or wait 15 minutes.'})
             return self.reply(200, self.state(), cookie=cookie)
-        if self.path in ('/api/report', '/api/export.txt', '/api/export.json'):
+        if self.path in ('/api/report', '/api/export.txt', '/api/export.pdf'):
             if not self.owns_session():
                 return self.reply(401, {'error': 'A current local session is required.'})
             try:
@@ -124,9 +139,13 @@ class NoSMSHandler(BaseHTTPRequestHandler):
             if self.path == '/api/report':
                 return self.reply(200, report)
             as_text = self.path.endswith('.txt')
-            raw = (no_sms_report_text(report) if as_text else json.dumps(report, indent=2)).encode('utf-8')
-            return self.reply(200, raw, content_type='text/plain; charset=utf-8' if as_text else 'application/json; charset=utf-8',
-                              download='scanmydigits-no-sms-report.' + ('txt' if as_text else 'json'))
+            raw = no_sms_report_text(report).encode('utf-8') if as_text else report_pdf(report)
+            try:
+                self.server.session['scan'].current_report()
+            except ScanError as error:
+                return self.reply(409, {'error': str(error)})
+            return self.reply(200, raw, content_type='text/plain; charset=utf-8' if as_text else 'application/pdf',
+                              download='scanmydigits-no-sms-report.' + ('txt' if as_text else 'pdf'))
         files = {'/': ('no_sms.html', 'text/html; charset=utf-8'),
                  '/no_sms.js': ('no_sms.js', 'text/javascript; charset=utf-8'),
                  '/no_sms.css': ('no_sms.css', 'text/css; charset=utf-8')}
@@ -140,7 +159,7 @@ class NoSMSHandler(BaseHTTPRequestHandler):
             return self.reply(404, {'error': 'Operation not available in the no-SMS local test.'})
         if not self.owns_session():
             return self.reply(401, {'error': 'Reload the original local session.'})
-        if not secrets.compare_digest(self.headers.get('X-CSRF-Token', ''), self.server.session['csrf']):
+        if not token_matches(self.headers.get('X-CSRF-Token', ''), self.server.session['csrf']):
             return self.reply(403, {'error': 'A current session security token is required.'})
         if (self.headers.get('Content-Type') != 'application/json' or
             self.headers.get('Transfer-Encoding') or len(self.headers.get_all('Content-Length', [])) != 1):
@@ -178,24 +197,35 @@ def main(argv=None):
                         help='Explicitly acknowledge this unverified local-only test.')
     parser.add_argument('--port', type=int, default=4176)
     parser.add_argument('--serper-live', action='store_true')
+    parser.add_argument('--properties-file', type=Path,
+                        help='Explicit existing owner-private ScanPlus properties file; read in place, never copied.')
     parser.add_argument('--confirmed-free-queries', type=int)
+    parser.add_argument('--test-max-scans', type=int, choices=range(1, 6), default=1,
+                        help='Local own-number testing only: one to five scans, each separately consented. Default: one.')
     parser.add_argument('--no-paid-topup-confirmed', action='store_true')
+    parser.add_argument('--diagnostic-log', action='store_true',
+                        help='Opt in to an owner-only local error-category log, bounded to 64 KiB. No phone/key/body logging.')
     args = parser.parse_args(argv)
     if not 1024 <= args.port <= 65535:
         parser.error('Choose a port from 1024 to 65535.')
     search = None
     try:
         if args.serper_live:
-            search = load_approved_search(Path(__file__).resolve().parent / 'scanplus.local.properties',
+            search = load_approved_search(args.properties_file if args.properties_file is not None else Path(__file__).resolve().parent / 'scanplus.local.properties',
                                           confirmed_free_queries=args.confirmed_free_queries,
-                                          no_paid_topup_confirmed=args.no_paid_topup_confirmed)
-        elif args.confirmed_free_queries is not None or args.no_paid_topup_confirmed:
-            parser.error('Free-query confirmation is only accepted with explicit --serper-live startup.')
-    except ScanError as error:
+                                          no_paid_topup_confirmed=args.no_paid_topup_confirmed,
+                                          max_scans=args.test_max_scans)
+            if args.diagnostic_log:
+                search.diagnostic_log = LocalDiagnosticLog(Path(__file__).resolve().parent / 'scanplus-local-diagnostics.log')
+        elif args.confirmed_free_queries is not None or args.no_paid_topup_confirmed or args.test_max_scans != 1 or args.properties_file is not None or args.diagnostic_log:
+            parser.error('Properties-file selection and test-budget confirmation require explicit --serper-live startup.')
+    except (ScanError, DiagnosticLogError) as error:
         raise SystemExit(str(error)) from None
     with NoSMSServer(('127.0.0.1', args.port), search) as server:
         print('ScanMyDigits private no-SMS self-test: http://127.0.0.1:' + str(server.server_port), flush=True)
-        print('SMS OFF. Ownership NOT verified. ' + ('One Serper scan allowed only after in-page consent; maximum 3 queries.' if search else 'Real Serper search BLOCKED. No keys are read.'), flush=True)
+        print('SMS OFF. Ownership NOT verified. ' + (str(search.transport.max_scans) + ' local test scan(s), maximum ' + str(search.transport.query_limit) + ' queries total. Same number only; separate consent for each scan.' if search else 'Real Serper search BLOCKED. No keys are read.'), flush=True)
+        if search and search.diagnostic_log:
+            print('Private diagnostic log: scanplus-local-diagnostics.log (' + search.diagnostic_log.status + '). Maximum 64 KiB; safe categories and counters only.', flush=True)
         try:
             server.serve_forever(poll_interval=.5)
         except KeyboardInterrupt:

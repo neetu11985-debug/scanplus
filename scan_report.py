@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from uuid import uuid4
 from providers import CATALOG
+from search_diagnostics import search_diagnostic_text
 
 SITE_IDS = {'spokeo.com': 'spokeo', 'whitepages.com': 'whitepages', 'truepeoplesearch.com': 'truepeople'}
 GUIDE_NOTICE = ('Current page workflow has not been independently verified. Follow the site’s current '
@@ -48,7 +49,7 @@ def build_report(sources, provider, last_four):
             'created_at': datetime.now(timezone.utc).isoformat(), 'last_four': last_four,
             'search_provider': provider, 'sources': sources,
             'sources_checked': sum(s['status'] != 'source_unavailable' for s in sources),
-            'coverage': ('Three bounded ' + ('Serper Google Search' if provider == 'serper' else 'Brave') +
+            'coverage': ('At most three bounded ' + ('Serper Google Search' if provider == 'serper' else 'Brave') +
                 ' web-index queries, up to 10 results each. This is not a direct broker database search or a full Internet scan. '
                 'A missing result does not mean the number is absent online. Indexed results can be stale.'),
             'removal_notice': 'No removal was submitted or verified by ScanPlus. Manual progress is only your own checklist, not independent evidence.',
@@ -77,7 +78,7 @@ def report_text(report):
     labels = {'match_needs_confirmation': 'Potential match: confirmation needed',
               'not_found_in_checked_sources': 'No exact phone match in checked index results',
               'source_unavailable': 'Source unavailable: no absence conclusion'}
-    lines = ['SCANPLUS LOCAL SEARCH REPORT', 'Report: ' + report['report_id'],
+    lines = ['SCANPLUS PRIVATE SELF-TEST REPORT' if report.get('test_scope') == 'private_owner' else 'SCANPLUS LOCAL SEARCH REPORT', 'Report: ' + report['report_id'],
              'Created: ' + report['created_at'], 'Number ending: ' + str(report['last_four']),
              'Search provider: ' + report['search_provider'],
              str(report['sources_checked']) + ' of ' + str(len(report['sources'])) + ' source queries returned usable responses.',
@@ -85,7 +86,9 @@ def report_text(report):
     for source in report['sources']:
         guide = source['guide']
         lines += ['', guide['name'] + ' (' + source['site'] + ')', labels[source['status']],
-                  'Checked: ' + source['checked_at']]
+                  'Query not attempted' if source.get('query_attempted') is False else 'Checked: ' + source['checked_at']]
+        diagnostic = search_diagnostic_text(source.get('search_diagnostic'))
+        if diagnostic: lines.append(diagnostic)
         if source.get('reason'): lines.append('Reason: ' + source['reason'].replace('_', ' '))
         for index, candidate in enumerate(source['candidates'], 1):
             lines += ['', 'Listing ' + str(index) + ': ' + candidate['source_url'], candidate['evidence'],

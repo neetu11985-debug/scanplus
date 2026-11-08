@@ -48,13 +48,16 @@ async function show() {
     button('Open server-verified synthetic report', async () => {
       const report = await api('stripe/report');
       const output = document.querySelector('#report'); output.hidden = false;
-      output.textContent = JSON.stringify(report, null, 2);
+      output.textContent = 'SYNTHETIC SANDBOX REPORT\n\nNo real phone search, SMS or removal was performed.\nLive sources checked: 0\n\n' + report.providers.map(provider => provider.name + ': ' + (provider.status === 'example_listing' ? 'example listing only' : 'not checked')).join('\n') + '\n\nSave the synthetic report below to download a PDF. Official removal guidance is included; no removal is confirmed.';
     });
     button('Save synthetic paid report to encrypted storage', async () => {
       await api('stripe/report/save', {confirm_synthetic: true});
       document.querySelector('#download').hidden = false;
       statusBox.textContent = 'Encrypted test report saved. Download while this verified session is active. No new payment was created.';
     });
+  } else if (payment.state === 'failed') {
+    statusBox.textContent += ' The delayed test payment failed. Access remains locked; check the existing outcome before any new test.';
+    button('Check existing payment with Stripe', async () => { await api('stripe/reconcile', {}); await show(); });
   } else if (payment.state !== 'expired') {
     button('I agree: continue to Stripe using test data only', async () => {
       const result = await api('stripe/checkout', {accept_test: true});

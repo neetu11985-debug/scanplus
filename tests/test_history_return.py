@@ -100,12 +100,51 @@ class DownloadArtifact(unittest.TestCase):
         connection.request('GET','/api/export',headers={'Cookie':self.cookie,'Origin':f'http://127.0.0.1:{self.port}'})
         response=connection.getresponse();raw=response.read();self.assertEqual(response.status,200)
         self.assertIn('attachment',response.getheader('Content-Disposition'));connection.close()
-        folder=Path(__file__).resolve().parents[1]/'evidence'/'return-journey-2026-11-03';folder.mkdir(parents=True, exist_ok=True)
-        path=folder/f'http-export-{time.time_ns()}.json';path.write_bytes(raw)
-        parsed=json.loads(path.read_text());self.assertTrue(parsed['demo']);self.assertEqual(parsed['phone'],server.PHONE)
-        self.assertEqual(len(parsed['providers']),3);self.assertTrue(all(p['source_url']is None for p in parsed['providers']))
-        for field in ('csrf_token','csrf_hash','phone_ref','sid','receipt'):self.assertNotIn(field,parsed)
-        self.assertNotIn(self.cookie.split('=',1)[1],raw.decode());self.assertNotIn(self.csrf,raw.decode())
+        self.assertEqual(response.getheader('Content-Type'),'application/pdf')
+        self.assertEqual(response.getheader('Content-Disposition'),'attachment; filename=scanplus-demo-report.pdf')
+        self.assertEqual(response.getheader('Cache-Control'),'no-store')
+        self.assertEqual(response.getheader('X-Content-Type-Options'),'nosniff')
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'synthetic-report.pdf';path.write_bytes(raw)
+            self.assertTrue(path.read_bytes().startswith(b'%PDF-'))
+            self.assertTrue(path.read_bytes().rstrip().endswith(b'%%EOF'))
+        self.assertNotIn(self.cookie.split('=',1)[1].encode(),raw)
+        self.assertNotIn(self.csrf.encode(),raw)
+
+    def test_pdf_export_expiring_during_render_never_sends_attachment(self):
+        import http.client
+        from unittest.mock import patch
+        self.ready()
+        key=digest(self.cookie.split('=',1)[1])
+        def expire_during_render(report):
+            current=server.STORE.get('session',key,key)
+            current['verified_until']=0
+            server.STORE.put('session',key,key,current['expires'],current)
+            return b'%PDF-1.7 expired synthetic report'
+        with patch('server.demo_report_pdf',side_effect=expire_during_render):
+            connection=http.client.HTTPConnection('127.0.0.1',self.port,timeout=5)
+            connection.request('GET','/api/export',headers={'Cookie':self.cookie,'Origin':f'http://127.0.0.1:{self.port}'})
+            response=connection.getresponse();raw=response.read()
+            self.assertEqual(response.status,403)
+            self.assertIsNone(response.getheader('Content-Disposition'))
+            self.assertFalse(raw.startswith(b'%PDF-'))
+            connection.close()
+
+    def test_pdf_export_requires_current_session_origin_and_expiry(self):
+        import http.client
+        self.assertEqual(self.req('export')[0],403)
+        self.ready()
+        connection=http.client.HTTPConnection('127.0.0.1',self.port,timeout=5)
+        connection.request('GET','/api/export',headers={'Cookie':self.cookie,'Origin':'https://evil.example'})
+        response=connection.getresponse();response.read()
+        self.assertEqual(response.status,403);connection.close()
+        self.req('clear',{})
+        self.assertEqual(self.req('export')[0],403)
+        self.ready()
+        with server.STORE.transaction():
+            server.STORE.conn.execute("UPDATE records SET expires=0 WHERE kind='session'")
+        self.assertEqual(self.req('export')[0],403)
+
 
 class ConcurrentPartialRefund(unittest.TestCase):
     def test_two_connections_one_offline_refund_submission(self):

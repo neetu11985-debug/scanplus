@@ -18,7 +18,7 @@ function harness({verified=true, state='pending', amount=149, hash='', failed=fa
       if(path==='/api/stripe/status') {data={state,amount_cents:amount};if(failed){ok=false;data={error:'Sandbox disabled.'};}}
       if(path==='/api/stripe/checkout')data={state:'pending',checkout_url:url};
       if(path==='/api/stripe/reconcile'){state='paid';data={state,amount_cents:amount};}
-      if(path==='/api/stripe/report')data={demo:true,text:'<script>untrusted</script>'};
+      if(path==='/api/stripe/report')data={demo:true,providers:[{name:'<script>untrusted</script>',status:'example_listing'}]};
       return {ok,json:async()=>data};
     }};
   vm.createContext(context);vm.runInContext(source,context);
@@ -40,9 +40,14 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
   await h.buttons()[0].onclick();assert.equal(h.nodes['#report'].hidden,false);assert.match(h.nodes['#report'].textContent,/<script>untrusted/);assert.equal(h.nodes['#report'].innerHTML,undefined);
   await h.buttons()[1].onclick();assert.equal(h.nodes['#download'].hidden,false);
   assert.deepEqual(JSON.parse(h.calls.find(c=>c.path==='/api/stripe/report/save').options.body),{confirm_synthetic:true});
+  h=harness({state:'failed'});await tick();assert.match(h.nodes['#status'].textContent,/delayed test payment failed/);
+  assert.equal(h.buttons().some(b=>b.textContent.includes('continue to Stripe')),false);
+  assert.equal(h.calls.some(c=>c.path==='/api/stripe/checkout'),false);
+  assert.equal(h.buttons().length,2);assert.match(h.buttons()[0].textContent,/Check existing payment/);
+  await h.buttons()[0].onclick();assert.match(h.nodes['#status'].textContent,/paid/);
   h=harness({state:'expired'});await tick();assert.equal(h.buttons().length,1);assert.match(h.buttons()[0].textContent,/Clear/);
   h=harness({url:'https://evil.example/pay'});await tick();await h.buttons()[0].onclick();assert.equal(h.redirects.length,0);assert.match(h.nodes['#error'].textContent,/Unsupported/);
   h=harness({failed:true});await tick();assert.match(h.nodes['#error'].textContent,/Sandbox disabled/);assert.equal(h.buttons().length,0);
   h=harness({verified:false});await tick();assert.match(h.buttons()[0].textContent,/synthetic code/);assert.equal(h.calls.some(c=>c.path.startsWith('/api/stripe/')),false);
-  console.log('PASS: Stripe sandbox UI explicit redirect, duplicate-click guard, fixed request/CSRF, pending/cancel/expired/disabled states, server reconciliation, safe report text and untrusted destination rejection. Offline DOM harness only, not rendered browser QA.');
+  console.log('PASS: Stripe sandbox UI explicit redirect, duplicate-click guard, fixed request/CSRF, pending/cancel/failed/expired/disabled states, server reconciliation, safe report text and untrusted destination rejection. Offline DOM harness only, not rendered browser QA.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

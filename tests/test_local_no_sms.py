@@ -51,7 +51,7 @@ class NoSMSHTTPTests(unittest.TestCase):
             self.cookie = cookie.split(';')[0]
         self.assertEqual(reply.getheader('Cache-Control'), 'no-store')
         self.assertIn("frame-ancestors 'none'", reply.getheader('Content-Security-Policy'))
-        payload = json.loads(raw) if reply.getheader('Content-Type') == 'application/json' else raw.decode()
+        payload = json.loads(raw) if reply.getheader('Content-Type') == 'application/json' else raw if reply.getheader('Content-Type') == 'application/pdf' else raw.decode()
         if isinstance(payload, dict) and 'csrf_token' in payload:
             self.csrf = payload['csrf_token']
         status = reply.status

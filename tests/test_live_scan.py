@@ -8,6 +8,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from live_scan import Settings, Providers, ScanSession, ScanError, HTTPSJSONTransport, normalize_phone, exact_phone_present
 
+from scan_report import build_report
+
 PHONE = '+12025550147'
 SID = 'VE' + '1' * 32
 SETTINGS = Settings('AC' + '0' * 32, 'SYNTHETIC-TOKEN', 'VA' + '0' * 32, 'SYNTHETIC-KEY')
@@ -157,7 +159,10 @@ class LiveScanTests(unittest.TestCase):
             now[0] = 402
             return result
         transport.request = slow_search
-        self.assertEqual(session.scan(brave_consent=True)['phase'], 'entry')
+        with patch('live_scan.build_report', wraps=build_report) as builder:
+            self.assertEqual(session.scan(brave_consent=True)['phase'], 'entry')
+            skipped = builder.call_args.args[0][1:]
+            self.assertTrue(all(source['query_attempted'] is False for source in skipped))
         self.assertEqual(len(transport.calls), 3, 'No further queries may start after expiry')
         self.assertIsNone(session.phone)
     def test_transport_rejects_unapproved_destinations_without_network(self):

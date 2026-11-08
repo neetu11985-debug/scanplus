@@ -1,5 +1,6 @@
 """Synthetic-only storage security checks; not live-provider/deployment evidence."""
 import concurrent.futures
+from contextlib import closing
 import hashlib
 import os
 import stat
@@ -35,11 +36,11 @@ class EncryptedStoreTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def rows(self, purpose='phone'):
-        with sqlite3.connect(self.path) as conn:
+        with closing(sqlite3.connect(self.path)) as conn, conn:
             return conn.execute('SELECT purpose,id,version,lookup,nonce,ciphertext FROM encrypted_records WHERE purpose=?', (purpose,)).fetchall()
 
     def mutate(self, sql, params=()):
-        with sqlite3.connect(self.path) as conn:
+        with closing(sqlite3.connect(self.path)) as conn, conn:
             conn.execute(sql, params)
 
     def test_disk_contains_no_plaintext_phone_owner_credentials_report_or_expiry(self):
@@ -235,13 +236,13 @@ class EncryptedStoreTests(unittest.TestCase):
 
     def test_legacy_database_requires_explicit_migration(self):
         legacy = Path(self.tmp.name) / 'legacy.sqlite'
-        with sqlite3.connect(legacy) as conn:
+        with closing(sqlite3.connect(legacy)) as conn, conn:
             conn.execute('CREATE TABLE records (data TEXT)')
             conn.execute('INSERT INTO records VALUES (?)', ('synthetic-hash-only',))
         legacy.chmod(0o600)
         with self.assertRaises(SecureStorageError):
             EncryptedStore(legacy, {1: KEY}, 1)
-        with sqlite3.connect(legacy) as conn:
+        with closing(sqlite3.connect(legacy)) as conn, conn:
             self.assertEqual([('records',)], conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall())
 
     def test_file_path_rejects_symlinks_hardlinks_nonregular_and_open_modes(self):

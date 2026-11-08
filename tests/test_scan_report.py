@@ -97,6 +97,15 @@ class ReportTests(unittest.TestCase):
             self.assertIn(word,text)
         self.assertNotIn(PHONE,text)
 
+    def test_skipped_sources_are_not_labeled_checked_in_text_export(self):
+        session,_=ready_session()
+        session.report['sources'][1].update(status='source_unavailable', candidates=[],
+            query_attempted=False, checked_at='UNATTEMPTED_TIMESTAMP', reason='not_attempted_after_provider_error')
+        text=report_text(session.report)
+        self.assertIn('Query not attempted', text)
+        self.assertNotIn('UNATTEMPTED_TIMESTAMP', text)
+        self.assertIn('Source unavailable: no absence conclusion', text)
+
     def test_stale_listing_action_cannot_mutate_a_replacement_report(self):
         session,transport=ready_session()
         report_a=session.report
@@ -164,7 +173,7 @@ class ReportHTTPTests(unittest.TestCase):
         conn.request('GET' if data is None else 'POST',path,None if data is None else json.dumps(data),headers)
         response=conn.getresponse();raw=response.read();self.headers=dict(response.getheaders());status=response.status
         if response.getheader('Set-Cookie'):self.cookie=response.getheader('Set-Cookie').split(';')[0]
-        result=json.loads(raw) if 'json' in response.getheader('Content-Type','') else raw.decode()
+        result=json.loads(raw) if 'json' in response.getheader('Content-Type','') else raw if response.getheader('Content-Type') == 'application/pdf' else raw.decode()
         if isinstance(result,dict) and 'csrf_token' in result:self.csrf=result['csrf_token']
         conn.close();return status,result
     def ready(self):
@@ -174,7 +183,7 @@ class ReportHTTPTests(unittest.TestCase):
         status,state=self.request('/api/scan',{'serper_consent':True});self.assertEqual(status,200)
         return state['report']
     def test_exports_need_current_completed_session_and_are_attachments(self):
-        for path in ('/api/report','/api/export.txt','/api/export.json'):
+        for path in ('/api/report','/api/export.txt','/api/export.pdf'):
             self.assertEqual(self.request(path)[0],401)
         self.request('/api/session')
         self.assertEqual(self.request('/api/export.txt')[0],409)
@@ -184,21 +193,36 @@ class ReportHTTPTests(unittest.TestCase):
         self.assertEqual(self.headers['Content-Disposition'],'attachment; filename=scanplus-local-report.txt')
         self.assertEqual(self.headers['Cache-Control'],'no-store')
         self.assertEqual(self.headers['X-Content-Type-Options'],'nosniff')
-        status,download=self.request('/api/export.json')
-        self.assertEqual(status,200);self.assertEqual(download,report)
-        self.assertEqual(self.headers['Content-Disposition'],'attachment; filename=scanplus-local-report.json')
+        status,download=self.request('/api/export.pdf')
+        self.assertEqual(status,200);self.assertTrue(download.startswith(b'%PDF-1.7'));self.assertIn(report['report_id'].encode(),download)
+        self.assertEqual(self.headers['Content-Type'],'application/pdf')
+        self.assertEqual(int(self.headers['Content-Length']),len(download))
+        self.assertEqual(self.headers['Content-Disposition'],'attachment; filename=scanplus-local-report.pdf')
         self.assertEqual(len(self.transport.calls),5)
+        self.assertEqual(self.request('/api/export.json')[0],404)
         self.request('/api/clear',{})
-        self.assertEqual(self.request('/api/export.json')[0],409)
+        self.assertEqual(self.request('/api/export.pdf')[0],409)
     def test_export_isolated_same_origin_and_expiring(self):
         self.ready();first_cookie=self.cookie
         for headers in ({'Origin':'https://evil.example'},{'Host':'evil.example'},{'Sec-Fetch-Site':'cross-site'}):
-            self.assertEqual(self.request('/api/export.txt',**headers)[0],403)
+            self.assertEqual(self.request('/api/export.pdf',**headers)[0],403)
         self.cookie='';self.csrf='';self.request('/api/session')
-        self.assertEqual(self.request('/api/report')[0],409)
+        self.assertEqual(self.request('/api/export.pdf')[0],409)
         self.cookie=first_cookie
         self.server.sessions[first_cookie.split('=',1)[1]]['scan'].expires=-1
         self.assertEqual(self.request('/api/export.txt')[0],409)
+    def test_pdf_expiry_during_generation_fails_before_download(self):
+        self.ready()
+        scan=self.server.sessions[self.cookie.split('=',1)[1]]['scan']
+        def slow_pdf(report):
+            scan.expires=-1
+            return b'%PDF-1.7 synthetic result must not be returned'
+        with patch('local_live_server.report_pdf',side_effect=slow_pdf):
+            status,body=self.request('/api/export.pdf')
+        self.assertEqual(status,409)
+        self.assertNotIn('Content-Disposition',self.headers)
+        self.assertEqual(len(self.transport.calls),5)
+
     def test_checklist_csrf_confirmation_scope_and_no_removal_endpoint(self):
         report=self.ready();cid=report['sources'][0]['candidates'][0]['id']
         data={'candidate_id':cid,'action':'confirm_mine','confirmed':True}
@@ -207,7 +231,7 @@ class ReportHTTPTests(unittest.TestCase):
         self.assertEqual(self.request('/api/listing/review',dict(data,candidate_id='other-report-id'))[0],409)
         self.assertEqual(self.request('/api/listing/review',data)[0],200)
         self.assertEqual(self.request('/api/listing/review',dict(data,action='record_manual_request'))[0],200)
-        report=self.request('/api/export.json')[1]
+        report=self.request('/api/report')[1]
         self.assertEqual(report['sources'][0]['candidates'][0]['manual_action'],'user_recorded_request')
         self.assertFalse(report['sources'][0]['candidates'][0]['removal_verified'])
         for path in ('/api/removal','/api/removal/status','/api/checkout'):

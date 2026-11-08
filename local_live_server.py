@@ -12,6 +12,7 @@ from http.cookies import SimpleCookie, CookieError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from live_scan import Settings, Providers, ScanSession, ScanError, HTTPSJSONTransport
 from scan_report import report_text
+from scan_report_pdf import report_pdf
 from safe_local_log import SafeLocalLog
 
 ROOT = Path(__file__).parent / 'static'
@@ -38,11 +39,17 @@ class LocalLiveServer(ThreadingHTTPServer):
             self.starts = [stamp for stamp in self.starts if stamp > now - 600]
 
 class LiveHandler(BaseHTTPRequestHandler):
+    scan_session_class = ScanSession
     def setup(self):
         super().setup()
         self.connection.settimeout(5)
     def log_message(self, *_):
         pass  # Never log URLs, phone numbers, OTPs, tokens or provider responses.
+    @property
+    def cookie_name(self):
+        # Browser cookies are host-scoped; local test ports must not overwrite
+        # each other's sessions. This is not isolation from hostile local apps.
+        return 'scanplus_live_' + str(self.server.server_port) + '_sid'
     @property
     def origin(self):
         return 'http://127.0.0.1:' + str(self.server.server_port)
@@ -58,7 +65,7 @@ class LiveHandler(BaseHTTPRequestHandler):
         events = {'/api/session': 'session_read', '/api/start': 'sms_start',
                   '/api/verify': 'code_check', '/api/scan': 'search',
                   '/api/clear': 'session_clear', '/api/listing/review': 'listing_review',
-                  '/api/report': 'report_read', '/api/export.json': 'report_export',
+                  '/api/report': 'report_read', '/api/export.pdf': 'report_export',
                   '/api/export.txt': 'report_export', '/': 'page_read',
                   '/live.js': 'page_read', '/live.css': 'page_read'}
         event = events.get(self.path, 'unknown_route')
@@ -108,10 +115,10 @@ class LiveHandler(BaseHTTPRequestHandler):
             cookie = SimpleCookie(self.headers.get('Cookie', ''))
         except CookieError:
             return None
-        token = cookie['scanplus_live_sid'].value if 'scanplus_live_sid' in cookie else ''
+        token = cookie[self.cookie_name].value if self.cookie_name in cookie else ''
         return self.server.sessions.get(token)
     def get(self):
-        if self.path in ('/api/report', '/api/export.json', '/api/export.txt'):
+        if self.path in ('/api/report', '/api/export.pdf', '/api/export.txt'):
             session = self.session()
             if session is None:
                 return self.reply(401, {'error': 'A current local session is required.'})
@@ -122,12 +129,17 @@ class LiveHandler(BaseHTTPRequestHandler):
             if self.path == '/api/report':
                 return self.reply(200, report)
             as_text = self.path.endswith('.txt')
-            raw = (report_text(report) if as_text else json.dumps(report, indent=2)).encode('utf-8')
+            raw = report_text(report).encode('utf-8') if as_text else report_pdf(report)
+            # Generation can span the expiry boundary; authorize again before sending.
+            try:
+                session['scan'].current_report()
+            except ScanError as error:
+                return self.reply(409, {'error': str(error)})
             self.record_activity(200)
             self.send_response(200)
             self.headers_common()
-            self.send_header('Content-Type', 'text/plain; charset=utf-8' if as_text else 'application/json')
-            self.send_header('Content-Disposition', 'attachment; filename=scanplus-local-report.' + ('txt' if as_text else 'json'))
+            self.send_header('Content-Type', 'text/plain; charset=utf-8' if as_text else 'application/pdf')
+            self.send_header('Content-Disposition', 'attachment; filename=scanplus-local-report.' + ('txt' if as_text else 'pdf'))
             self.send_header('Content-Length', str(len(raw)))
             self.end_headers()
             self.wfile.write(raw)
@@ -139,9 +151,9 @@ class LiveHandler(BaseHTTPRequestHandler):
                 if len(self.server.sessions) >= 10:
                     return self.reply(429, {'error': 'Too many local sessions. Close unused sessions and wait 15 minutes.'})
                 token = secrets.token_urlsafe(32)
-                session = {'csrf': secrets.token_urlsafe(32), 'expires': time.monotonic() + 900, 'scan': ScanSession(self.server.providers)}
+                session = {'csrf': secrets.token_urlsafe(32), 'expires': time.monotonic() + 900, 'scan': self.scan_session_class(self.server.providers)}
                 self.server.sessions[token] = session
-                cookie = 'scanplus_live_sid=' + token + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=900'
+                cookie = self.cookie_name + '=' + token + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=900'
             return self.reply(200, dict(session['scan'].state(), csrf_token=session['csrf']), cookie)
         paths = {'/': ('live.html', 'text/html'), '/live.js': ('live.js', 'text/javascript'), '/live.css': ('live.css', 'text/css')}
         if self.path not in paths:
@@ -161,7 +173,8 @@ class LiveHandler(BaseHTTPRequestHandler):
         session = self.session()
         if session is None:
             return self.reply(401, {'error': 'Local session expired. Reload to start again.'})
-        if not secrets.compare_digest(self.headers.get('X-CSRF-Token', ''), session['csrf']):
+        csrf = self.headers.get('X-CSRF-Token', '')
+        if not isinstance(csrf, str) or not csrf.isascii() or len(csrf) > 128 or not secrets.compare_digest(csrf, session['csrf']):
             return self.reply(403, {'error': 'Session security token required. Reload the page.'})
         if self.headers.get('Content-Type') != 'application/json' or self.headers.get('Transfer-Encoding'):
             return self.reply(400, {'error': 'A bounded JSON request is required.'})

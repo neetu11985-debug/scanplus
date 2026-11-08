@@ -155,7 +155,7 @@ class RemovalHTTP(unittest.TestCase):
         body=self.consent(listing);status,receipt=self.req('removal',body)
         self.assertEqual(status,200);self.assertEqual(self.req('removal',body)[1],receipt)
         self.assertEqual(self.req('report')[1]['removal_request'],receipt)
-        self.assertEqual(self.req('export')[1]['removal_request'],receipt)
+        self.assertTrue(self.req('export')[1].startswith(b'%PDF-'))
         for _ in range(3):self.assertEqual(self.req('removal/status',{'request_id':receipt['request_id']})[1],receipt)
         self.req('clear',{});self.assertEqual(self.req('removal',body)[0],401)
         self.assertEqual(server.STORE.conn.execute("SELECT COUNT(*) FROM records WHERE kind='session'").fetchone()[0],0)
@@ -180,10 +180,10 @@ class RemovalHTTP(unittest.TestCase):
             row=server.STORE.conn.execute("SELECT id,owner,expires,data FROM records WHERE kind='session'").fetchone()
             s=json.loads(row[3]);s['removal']='removal_confirmed'
             server.STORE.put('session',row[0],row[1],row[2],s)
-        for path in ('report','export'):
-            report=self.req(path)[1]
-            self.assertEqual(report['removal'],'not_requested')
-            self.assertIsNone(report['removal_request'])
+        report=self.req('report')[1]
+        self.assertEqual(report['removal'],'not_requested')
+        self.assertIsNone(report['removal_request'])
+        self.assertTrue(self.req('export')[1].startswith(b'%PDF-'))
 
     def test_same_identity_new_login_revokes_all_removal_routes(self):
         self.ready();listing=self.listing();body=self.consent(listing)
