@@ -95,4 +95,28 @@ class SandboxReports:
                 self._store = None
 
 
+def pdf_bundle(text, report_id):
+    """Decode only the authenticated, server-generated synthetic report envelope.
+
+    Never regenerate a missing report or interpret arbitrary stored text as a
+    live result. Storage and ownership checks must precede this conversion.
+    """
+    prefix = ('SCANPLUS SYNTHETIC STRIPE SANDBOX REPORT\n'
+              'No real charge, phone query, SMS or removal occurred.\n'
+              'Phone: ')
+    if not isinstance(text, str) or len(text) > 65536 or not text.startswith(prefix):
+        raise SecureStorageError('Unsupported saved sandbox report.')
+    phone, separator, payload = text[len(prefix):].partition('\n')
+    if not separator or phone not in FIXTURE_PHONES:
+        raise SecureStorageError('Unsupported saved sandbox report.')
+    try:
+        providers = json.loads(payload)
+    except (ValueError, TypeError):
+        raise SecureStorageError('Unsupported saved sandbox report.') from None
+    if providers != json.loads(json.dumps(FixtureDiscovery().discover())):
+        raise SecureStorageError('Unsupported saved sandbox report.')
+    return {'demo': True, 'test_mode': True, 'phone': phone,
+            'report_id': report_id, 'providers': providers, 'live_sources_checked': 0}
+
+
 REPORTS = SandboxReports()

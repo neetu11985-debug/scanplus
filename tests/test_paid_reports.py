@@ -4,7 +4,7 @@ import os
 import time
 from unittest.mock import patch
 from encrypted_storage import EncryptedStore, SecureStorageError
-from secure_reports import SandboxReports
+from secure_reports import SandboxReports, pdf_bundle
 from storage import digest
 import test_stripe_checkout as stripe_tests
 
@@ -53,7 +53,9 @@ class PaidReportsTests(stripe_tests.StripeHTTPTests):
         self.assertEqual(self.factory_calls, 1)
         report = self.call('/api/stripe/report/download')
         self.assertEqual(report['status'], 200)
-        self.assertIn(b'SYNTHETIC STRIPE SANDBOX', report['raw'])
+        self.assertTrue(report['raw'].startswith(b'%PDF-'))
+        self.assertEqual(report['headers']['Content-Type'], 'application/pdf')
+        self.assertIn('scanplus-sandbox-report.pdf', report['headers']['Content-Disposition'])
         self.assertIn('attachment;', report['headers']['Content-Disposition'])
         self.assertEqual(report['headers']['Cache-Control'], 'no-store')
         raw = b''.join(bytes(r[0]) for r in self.encrypted._conn.execute('SELECT ciphertext FROM encrypted_records'))
@@ -119,12 +121,14 @@ class PaidReportsTests(stripe_tests.StripeHTTPTests):
         self.assertEqual(sum(call[0] == 'POST' for call in self.fake.calls), 1)
 
     def test_legacy_99_cent_paid_order_can_save_and_download(self):
-        self.start()
+        # The request contract is now fixed at session start, before Checkout IO.
         with patch('stripe_checkout.LOOKUP_PRICE_CENTS', 99):
+            self.start()
             self.assertEqual(self.call('/api/stripe/checkout', {'accept_test': True})['status'], 200)
         sid = self.sid()
         order = self.store.get('stripe_order', sid, sid)
-        del order['amount_cents']  # Persisted legacy schema, before price snapshots.
+        for field in ('amount_cents', 'request_version', 'integration_identifier'):
+            del order[field]  # Persisted legacy schema, before request snapshots.
         with self.store.transaction():
             self.store.put('stripe_order', sid, sid, order['expires'], order)
         self.fake.paid()
@@ -133,3 +137,65 @@ class PaidReportsTests(stripe_tests.StripeHTTPTests):
         self.assertEqual(self.save_report()['status'], 200)
         self.assertEqual(self.call('/api/stripe/report/download')['status'], 200)
         self.assertEqual(sum(call[0] == 'POST' for call in self.fake.calls), 1)
+
+    def test_pdf_conversion_requires_valid_authenticated_synthetic_envelope(self):
+        self.paid()
+        sid = self.sid()
+        session = self.store.get('session', sid, sid)
+        order = self.store.get('stripe_order', sid, sid)
+        phone, text, _ = self.reports.trusted_bundle(sid, session, order)
+        bundle = pdf_bundle(text, session['report_id'])
+        self.assertTrue(bundle['demo'])
+        self.assertTrue(bundle['test_mode'])
+        self.assertEqual(bundle['phone'], phone)
+        self.assertEqual(bundle['live_sources_checked'], 0)
+        for invalid in (None, '', text.replace(phone, '+14158675309'), text + 'garbage',
+                        text.replace('spokeo.com', 'evil.example'), text.replace('Phone: ', 'Number: ')):
+            with self.subTest(invalid=type(invalid).__name__), self.assertRaises(SecureStorageError):
+                pdf_bundle(invalid, session['report_id'])
+
+    def test_pdf_missing_corrupt_or_unavailable_saved_report_never_fabricates_results(self):
+        self.paid()
+        self.assertEqual(self.call('/api/stripe/report/download')['status'], 404)
+        self.save_report()
+        for stored, expected in ((None, 404), ('invalid synthetic report', 503)):
+            with patch.object(self.encrypted, 'get_report', return_value=stored):
+                response = self.call('/api/stripe/report/download')
+                self.assertEqual(response['status'], expected)
+                self.assertFalse(response['raw'].startswith(b'%PDF-'))
+        with patch.object(self.encrypted, 'get_report', side_effect=SecureStorageError('private failure')):
+            response = self.call('/api/stripe/report/download')
+            self.assertEqual(response['status'], 503)
+            self.assertNotIn(b'private failure', response['raw'])
+        self.assertEqual(sum(call[0] == 'POST' for call in self.fake.calls), 1)
+
+    def test_pdf_session_expiring_during_render_never_sends_attachment(self):
+        self.paid(); self.save_report()
+        sid=self.sid()
+        def expire_during_render(report):
+            current=self.store.get('session',sid,sid)
+            current['verified_until']=0
+            self.store.put('session',sid,sid,current['expires'],current)
+            return b'%PDF-1.7 expired synthetic report'
+        with patch('stripe_routes.demo_report_pdf',side_effect=expire_during_render):
+            response=self.call('/api/stripe/report/download')
+        self.assertEqual(response['status'],403)
+        self.assertNotIn('Content-Disposition',response['headers'])
+        self.assertFalse(response['raw'].startswith(b'%PDF-'))
+        self.assertEqual(sum(call[0]=='POST' for call in self.fake.calls),1)
+
+    def test_pdf_stored_report_revoked_during_render_never_sends_attachment(self):
+        self.paid(); self.save_report()
+        original=self.reports.download
+        call_count=0
+        def download_then_revoke(*args):
+            nonlocal call_count
+            call_count+=1
+            return original(*args) if call_count==1 else None
+        with patch.object(self.reports,'download',side_effect=download_then_revoke):
+            response=self.call('/api/stripe/report/download')
+        self.assertEqual(call_count,2)
+        self.assertEqual(response['status'],404)
+        self.assertNotIn('Content-Disposition',response['headers'])
+        self.assertFalse(response['raw'].startswith(b'%PDF-'))
+        self.assertEqual(sum(call[0]=='POST' for call in self.fake.calls),1)

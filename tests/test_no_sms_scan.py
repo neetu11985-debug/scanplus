@@ -176,9 +176,11 @@ class NoSMSLiveHTTPTests(unittest.TestCase):
         status, text = self.request('/api/export.txt')
         self.assertEqual(status, 200)
         self.assertIn('self-attested, not verified', text)
-        status, data = self.request('/api/export.json')
+        status, data = self.request('/api/export.pdf')
         self.assertEqual(status, 200)
-        self.assertIs(json.loads(data)['ownership_verified'], False)
+        self.assertTrue(data.startswith(b'%PDF-1.7'))
+        self.assertIn(b'self-attested, not verified', data)
+        self.assertEqual(self.request('/api/export.json')[0],404)
         self.assertEqual(self.request('/api/scan', {'serper_consent': True, 'free_allowance_confirmed': True})[0], 200)
         self.assertEqual(len(self.transport.calls), 3)
         self.request('/api/clear', {})
@@ -191,7 +193,7 @@ class NoSMSLiveHTTPTests(unittest.TestCase):
         self.request('/api/scan', {'serper_consent': True, 'free_allowance_confirmed': True})
         cookie, csrf = self.cookie, self.csrf
         self.cookie=''; self.csrf=''
-        self.assertEqual(self.request('/api/export.json')[0], 401)
+        self.assertEqual(self.request('/api/export.pdf')[0], 401)
         self.assertEqual(self.request('/api/session')[0], 409)
         self.cookie, self.csrf = cookie, csrf
         self.server.session['scan'].expires = -1

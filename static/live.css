@@ -4,3 +4,8 @@
 
 .phone-entry{display:grid;grid-template-columns:124px minmax(0,1fr);gap:12px}.phone-entry label{margin:14px 0 0}.phone-entry select{display:block;width:100%;padding:14px 8px;margin:10px 0;border:1px solid #8fa99b;border-radius:8px;background:white;color:inherit;font-size:18px}.phone-entry input{min-width:0}#phone-help{margin-top:0}
 @media(max-width:360px){.phone-entry{grid-template-columns:1fr;gap:0}.phone-entry select{max-width:124px}}
+
+/* Use simple text markers instead of platform-dependent disclosure glyphs. */
+.manual-guide summary{list-style:none}.manual-guide summary::-webkit-details-marker{display:none}.manual-guide summary::marker{content:""}.manual-guide summary::before{content:"+";display:inline-block;width:1.2em}.manual-guide[open] summary::before{content:"-"}
+
+#check-test-payment{display:block;margin-top:12px}

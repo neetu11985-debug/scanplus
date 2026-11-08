@@ -27,7 +27,8 @@ class SwitchTests(unittest.TestCase):
     def test_refund_request_repeat_and_export(self):
         self.ready();first=self.req('refund',{'confirm':True});self.assertEqual(first[0],200)
         self.assertEqual(first,self.req('refund',{'confirm':True}));self.assertEqual(first[1]['refund_cents'],0)
-        self.assertEqual(self.req('export')[1]['refund'],first[1])
+        self.assertEqual(self.req('report')[1]['refund'],first[1])
+        self.assertTrue(self.req('export')[1].startswith(b'%PDF-'))
 
 class RefundTests(unittest.TestCase):
     def setUp(self):self.store=Store();self.addCleanup(self.store.close)

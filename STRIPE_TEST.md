@@ -6,18 +6,28 @@ The offline demo remains the default. A separate `/stripe-test` page is linked
 from the main demo. It can create **Stripe test-mode** hosted Checkout Sessions
 and reconcile test payments when the owner separately supplies test credentials.
 It charges no real money, uses synthetic reports and synthetic ownership, and
-cannot be enabled with a live secret key or `SCANPLUS_MODE=live`.
+cannot be enabled with a live secret or restricted key or `SCANPLUS_MODE=live`.
 
 ## What is implemented
 
 - Standard-library HTTPS transport to Stripe's fixed API host. API version pinned
   to `2026-10-28.endive`. No redirects, eight-second timeout, bounded responses,
   and generic errors without credentials or provider response bodies.
-- Server-owned one-time **149 cents USD** price; card payments only; no coupons,
-  subscriptions, price fields or order IDs accepted from the browser.
+- Server-owned one-time **149 cents USD** price with dynamic eligible test payment
+  methods managed in Stripe. No coupons, subscriptions, price fields or order IDs
+  are accepted from the browser. Delayed completion can outlive this short-lived
+  sandbox session; this is not a customer-payment recovery design.
 - A deterministic opaque order/idempotency key per synthetic session. Local
   pending orders survive network failures. Retry the same checkout after an
-  uncertain result; do not create a new session to hide a timeout.
+  uncertain result; do not create a new session to hide a timeout. New orders
+  copy an already committed, nonsecret session contract (request version, fixed
+  integration identifier, amount and origin), so an order-transaction rollback
+  cannot replace retry parameters. Existing pre-update orders still reconcile and
+  receive signed webhooks; an older unknown creation outcome is blocked from
+  recreation with changed parameters and needs operator reconciliation. An old
+  session without this contract cannot start another Checkout after the update;
+  check any existing outcome before starting a fresh synthetic session. No
+  existing session, order or running process is reset by the code update.
 - SQLite-backed order state, payment assignment and event deduplication in the
   existing transaction boundary. Signed raw-body webhook verification uses
   HMAC-SHA256, constant-time comparison and a five-minute timestamp tolerance.
@@ -27,7 +37,9 @@ cannot be enabled with a live secret key or `SCANPLUS_MODE=live`.
 - Fulfillment checks the Checkout object type, test-mode flag, session ID, order
   reference, metadata, mode, exact amount/currency, complete/paid state and unique
   payment-intent assignment. Duplicate or reordered events cannot double-fulfill
-  or move a paid order backward. Unpaid/expired sessions do not unlock access.
+  or move a paid order backward. Signed delayed-payment failure records `failed`,
+  keeps access locked and offers only checking the existing payment, not another
+  checkout. Unpaid, failed and expired sessions do not unlock access.
 - `POST /api/stripe/reconcile` retrieves the known Checkout Session from Stripe
   to recover from a delayed webhook. Browser return URLs, query strings, hashes,
   supplied session IDs and payment flags are never proof of payment.
@@ -44,13 +56,16 @@ manager/environment, not committed files, to supply these variable names:
 
 - `SCANPLUS_MODE=demo`
 - `SCANPLUS_STRIPE_TEST=1` (default: disabled)
-- `STRIPE_SECRET_KEY`: a Stripe **test** secret key, never a live key
+- `STRIPE_SECRET_KEY`: preferably a least-privilege `rk_test_` restricted key;
+  existing `sk_test_` secret keys are also supported. Both live prefixes are rejected.
 - `STRIPE_WEBHOOK_SECRET`: the signing secret for this test endpoint
 - `SCANPLUS_STRIPE_ORIGIN`: exact trusted origin, such as
   `http://127.0.0.1:4173`, with no path/trailing slash
 - For HTTPS WSGI, configure the same origin in `SCANPLUS_ALLOWED_ORIGINS`.
 
-No account, API key, webhook endpoint, CLI installation or tunnel was created.
+The official Stripe CLI 1.55.8 and its Codex agent tooling were installed on
+8 November 2026. No account, API key, webhook endpoint or tunnel was created
+by this code update, and no runtime credential configuration was changed.
 Owner-approved Stripe account/test setup and test webhook delivery still need
 validation. Account creation, terms, credential generation and public hosting
 are separate actions. Do not paste secrets in chat or Git. A publishable key is
@@ -64,8 +79,8 @@ confirmation is pending, then open the synthetic report. Cancelled returns do
 not imply payment. No automatic polling or background API work is performed.
 
 For approved webhook setup, route test snapshot events
-`checkout.session.completed`, `checkout.session.async_payment_succeeded` and
-`checkout.session.expired` to `/api/stripe/webhook`, with the matching API version
+`checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+`checkout.session.async_payment_failed` and `checkout.session.expired` to `/api/stripe/webhook`, with the matching API version
 and signing secret. Stripe CLI forwarding or an HTTPS endpoint would require
 separate setup; neither was enabled or exercised here.
 
@@ -170,3 +185,28 @@ fields appear, use synthetic values such as `test@example.com`.
 Official Stripe instructions verified November 7, 2026:
 [declined-payment test cards](https://docs.stripe.com/testing#declined-payments)
 and [interactive test-card usage](https://docs.stripe.com/testing#testing-interactively).
+
+## 8 November integration update
+
+The implementation remains sandbox-only. Restricted test keys, versioned immutable
+Checkout request parameters, dynamic methods, integration tags, and signed delayed
+payment failure handling are now covered by synthetic regressions. Existing
+pre-update unknown Checkout outcomes are not silently replayed or discarded.
+
+Keep Stripe account credentials constant throughout an existing test run. A local
+key prefix check is not proof of a key's permissions, account identity or actual
+API acceptance. Validate a least-privilege restricted key in the selected sandbox
+through separately approved testing; do not broaden key permissions automatically.
+See [Stripe key management](https://docs.stripe.com/keys-best-practices),
+[dynamic payment methods](https://docs.stripe.com/payments/payment-methods/dynamic-payment-methods),
+and [Checkout fulfillment](https://docs.stripe.com/checkout/fulfillment).
+
+See [STRIPE_INTEGRATION_PLAN.md](STRIPE_INTEGRATION_PLAN.md) for the remaining
+Payments, Billing, Connect, Invoicing and Tax decisions. These changes do not add
+subscriptions, tax collection, seller payouts, production refunds or deployment.
+
+Final combined local verification after this update: **446 Python tests passed**;
+all **10 UI contract harnesses**, Python/JavaScript syntax and TypeScript checks,
+and `git diff --check` passed. Independent review closed with no remaining
+actionable findings in these bounded changes. No rendered-browser or actual
+Stripe acceptance test was performed. See the integration plan for exact scope.

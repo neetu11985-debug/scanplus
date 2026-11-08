@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 from wsgiref.util import setup_testing_defaults
 from storage import Store
-from stripe_checkout import StripeCheckout, StripeError, verify_event, request, NoRedirect
+from stripe_checkout import StripeCheckout, StripeError, verify_event, request, NoRedirect, new_checkout_contract
 
 ENV = {'SCANPLUS_MODE': 'demo', 'SCANPLUS_STRIPE_TEST': '1',
        'STRIPE_SECRET_KEY': 'sk_test_fixture_not_a_credential',
@@ -44,17 +44,21 @@ class StripeTests(unittest.TestCase):
         env = patch.dict(os.environ, ENV); env.start(); self.addCleanup(env.stop)
         self.store = Store(); self.addCleanup(self.store.close)
         self.fake = FakeStripe(); self.gateway = StripeCheckout(self.store, self.fake)
-        self.session = {'verified': True, 'verified_until': time.time()+900, 'expires': time.time()+900, 'report_id': 'fixture-report'}
+        self.session = {'verified': True, 'verified_until': time.time()+900, 'expires': time.time()+900, 'report_id': 'fixture-report',
+                        'stripe_checkout_contract': new_checkout_contract()}
     def create(self):
         with self.store.transaction(): return self.gateway.create('owner', self.session)
     def event(self): return {'id': 'evt_fixture', 'livemode': False, 'type': 'checkout.session.completed', 'data': {'object': copy.deepcopy(self.fake.result)}}
     def test_default_disabled_live_keys_and_live_mode_rejected(self):
-        for change in ({'SCANPLUS_STRIPE_TEST': ''}, {'STRIPE_SECRET_KEY': 'sk_live_fixture'}, {'SCANPLUS_MODE': 'live'}, {'STRIPE_WEBHOOK_SECRET': ''}, {'SCANPLUS_STRIPE_ORIGIN': 'https://evil.test/path'}, {'SCANPLUS_STRIPE_ORIGIN': 'http://remote.test'}):
+        for change in ({'SCANPLUS_STRIPE_TEST': ''}, {'STRIPE_SECRET_KEY': 'sk_live_fixture'}, {'STRIPE_SECRET_KEY': 'rk_live_fixture'}, {'SCANPLUS_MODE': 'live'}, {'STRIPE_WEBHOOK_SECRET': ''}, {'SCANPLUS_STRIPE_ORIGIN': 'https://evil.test/path'}, {'SCANPLUS_STRIPE_ORIGIN': 'http://remote.test'}):
             with self.subTest(change=change), patch.dict(os.environ, change), self.assertRaises(StripeError): StripeCheckout(self.store, self.fake)
     def test_create_is_fixed_price_test_only_and_idempotent(self):
         result = self.create(); self.assertEqual(result, self.create()); self.assertEqual(len(self.fake.calls), 1)
         fields = self.fake.calls[0][2]; self.assertEqual(fields['line_items[0][price_data][unit_amount]'], '149')
-        self.assertEqual(fields['payment_method_types[0]'], 'card'); self.assertEqual(self.gateway.status('owner')['state'], 'pending')
+        self.assertFalse(any(name.startswith('payment_method_types') for name in fields))
+        self.assertFalse(any(name.startswith('allowed_payment_method_types') for name in fields))
+        self.assertRegex(fields['integration_identifier'], r'^scanplus-sandbox-[a-z]{8}$')
+        self.assertEqual(self.gateway.status('owner')['state'], 'pending')
         self.assertNotIn('phone', str(fields)); self.assertNotIn('customer_email', fields)
     def test_price_is_pinned_across_configuration_changes(self):
         self.create()
@@ -67,17 +71,94 @@ class StripeTests(unittest.TestCase):
     def test_legacy_order_retry_and_fulfillment_keep_99_cent_price(self):
         self.create()
         order = self.gateway.order('owner')
-        del order['amount_cents']
-        order['checkout_id'] = None
-        order.pop('url')
+        for name in ('amount_cents', 'request_version', 'integration_identifier'):
+            del order[name]
+        self.fake.result['amount_total'] = 99
         with self.store.transaction(): self.gateway.save(order)
-        self.create()
-        self.assertEqual(self.fake.calls[-1][2]['line_items[0][price_data][unit_amount]'], '99')
+        self.create()  # Existing URL is safe; do not send changed create parameters.
+        self.assertEqual(len(self.fake.calls), 1)
         self.fake.paid()
         with self.store.transaction(): self.gateway.webhook(*signed(self.event()))
         self.assertEqual(self.gateway.status('owner')['amount_cents'], 99)
         self.assertEqual(self.gateway.status('owner')['state'], 'paid')
         self.assertNotIn('amount_cents', self.gateway.order('owner'))
+
+    def test_legacy_uncertain_creation_blocks_new_parameters_but_webhook_recovers(self):
+        self.fake.fail = True
+        with self.store.transaction():
+            with self.assertRaises(StripeError): self.gateway.create('owner', self.session)
+        order = self.gateway.order('owner')
+        for name in ('request_version', 'integration_identifier'):
+            del order[name]
+        with self.store.transaction(): self.gateway.save(order)
+        self.fake.fail = False
+        with self.assertRaisesRegex(StripeError, 'operator reconciliation'): self.create()
+        self.assertEqual(len(self.fake.calls), 1)
+        self.fake('POST', '/v1/checkout/sessions', 'fixture', self.fake.calls[0][2], 'fixture')
+        self.fake.paid()
+        with self.store.transaction(): self.gateway.webhook(*signed(self.event()))
+        self.assertEqual(self.gateway.status('owner')['state'], 'paid')
+
+    def test_integration_identifier_is_snapshotted_for_uncertain_retries(self):
+        self.fake.fail = True
+        with self.store.transaction():
+            with self.assertRaises(StripeError): self.gateway.create('owner', self.session)
+        first = copy.deepcopy(self.fake.calls[0])
+        self.fake.fail = False
+        with patch('stripe_checkout.INTEGRATION_IDENTIFIER', 'scanplus-sandbox-abcdefgh'):
+            with self.store.transaction(): StripeCheckout(self.store, self.fake).create('owner', self.session)
+        self.assertEqual(first, self.fake.calls[1])
+
+    def test_restricted_test_key_works_and_malformed_or_live_keys_never_send(self):
+        restricted = 'rk_test_fixture_not_a_credential'
+        with patch.dict(os.environ, {'STRIPE_SECRET_KEY': restricted}):
+            gateway = StripeCheckout(self.store, self.fake)
+            with self.store.transaction(): gateway.create('owner', self.session)
+            self.assertEqual(gateway.key, restricted)
+        with patch('stripe_checkout.build_opener') as opener:
+            opener.return_value.open.return_value.__enter__.return_value.read.return_value = b'{}'
+            self.assertEqual(request('GET', '/v1/checkout/sessions/cs_test_fixture', restricted), {})
+            sent = opener.return_value.open.call_args.args[0]
+            self.assertEqual(sent.get_header('Authorization'), 'Bearer ' + restricted)
+        for key in ('sk_live_fixture_not_real', 'rk_live_fixture_not_real',
+                    restricted + '\n', restricted + ' ', 'pk_test_fixture_not_real', '', None, True):
+            with self.subTest(kind=type(key).__name__), patch('stripe_checkout.build_opener') as opener:
+                with self.assertRaises(StripeError): request('POST', '/v1/checkout/sessions', key)
+                opener.assert_not_called()
+
+    def test_delayed_failure_is_idempotent_and_never_unlocks_or_recreates_checkout(self):
+        self.create()
+        self.fake.result.update(status='complete', payment_status='unpaid', payment_intent='pi_fixture')
+        completed = self.event()
+        with self.store.transaction(): self.gateway.webhook(*signed(completed))
+        self.assertEqual(self.gateway.status('owner')['state'], 'pending')
+        failed = self.event(); failed.update(id='evt_async_failed', type='checkout.session.async_payment_failed')
+        with self.store.transaction():
+            self.gateway.webhook(*signed(failed)); self.gateway.webhook(*signed(failed))
+        self.assertEqual(self.gateway.status('owner')['state'], 'failed')
+        self.assertEqual(self.store.conn.execute("SELECT COUNT(*) FROM records WHERE kind='stripe_event'").fetchone()[0], 2)
+        with self.assertRaises(StripeError): self.create()
+        self.assertEqual(len(self.fake.calls), 1)
+        with self.store.transaction(): self.gateway.reconcile('owner')
+        self.assertEqual(self.gateway.status('owner')['state'], 'failed')
+        self.fake.paid()
+        success = self.event(); success.update(id='evt_async_success', type='checkout.session.async_payment_succeeded')
+        with self.store.transaction():
+            self.gateway.webhook(*signed(success)); self.gateway.webhook(*signed(failed))
+        self.assertEqual(self.gateway.status('owner')['state'], 'paid')
+        later = copy.deepcopy(failed); later['id'] = 'evt_reordered_failure'
+        with self.store.transaction(): self.gateway.webhook(*signed(later))
+        self.assertEqual(self.gateway.status('owner')['state'], 'paid')
+
+    def test_malformed_async_failure_does_not_change_payment_state(self):
+        self.create()
+        failed = self.event(); failed.update(id='evt_invalid_failure', type='checkout.session.async_payment_failed')
+        for change in ({'status': 'open'}, {'status': 'complete', 'payment_status': 'paid'},
+                       {'status': 'complete', 'payment_status': 'unpaid', 'amount_total': 1}):
+            event = copy.deepcopy(failed); event['data']['object'].update(change)
+            with self.subTest(change=change), self.assertRaises(StripeError):
+                with self.store.transaction(): self.gateway.webhook(*signed(event))
+        self.assertEqual(self.gateway.status('owner')['state'], 'pending')
 
     def test_unverified_rejected_without_call(self):
         self.session['verified'] = False
@@ -171,9 +252,37 @@ class StripeTests(unittest.TestCase):
             with self.store.transaction():
                 self.gateway.create('owner',self.session)
                 raise RuntimeError('Fixture local commit failure')
-        first=self.fake.calls[-1][3]
+        first=copy.deepcopy(self.fake.calls[-1])
         self.create()
-        self.assertEqual(first,self.fake.calls[-1][3])
+        self.assertEqual(first,self.fake.calls[-1])
+    def test_rollback_retry_keeps_session_contract_across_price_and_label_change(self):
+        with self.assertRaises(RuntimeError):
+            with self.store.transaction():
+                self.gateway.create('owner', self.session)
+                raise RuntimeError('Fixture commit failure')
+        first = copy.deepcopy(self.fake.calls[-1])
+        self.assertIsNone(self.gateway.order('owner'))
+        with patch('stripe_checkout.INTEGRATION_IDENTIFIER', 'scanplus-sandbox-abcdefgh'), \
+             patch('stripe_checkout.LOOKUP_PRICE_CENTS', 199):
+            with self.store.transaction(): StripeCheckout(self.store, self.fake).create('owner', self.session)
+        self.assertEqual(first, self.fake.calls[-1])
+        self.assertEqual(self.gateway.status('owner')['amount_cents'], 149)
+
+    def test_rollback_after_request_version_change_blocks_instead_of_mutating_retry(self):
+        with self.assertRaises(RuntimeError):
+            with self.store.transaction():
+                self.gateway.create('owner', self.session)
+                raise RuntimeError('Fixture commit failure')
+        with patch('stripe_checkout.CHECKOUT_REQUEST_VERSION', 3), self.assertRaisesRegex(StripeError, 'saved Stripe request contract'):
+            self.create()
+        self.assertIsNone(self.gateway.order('owner'))
+        self.assertEqual(len(self.fake.calls), 1)
+
+    def test_missing_legacy_session_contract_never_recreates_unknown_checkout(self):
+        del self.session['stripe_checkout_contract']
+        with self.assertRaisesRegex(StripeError, 'saved Stripe request contract'): self.create()
+        self.assertFalse(self.fake.calls)
+
     def test_transport_rejects_live_and_arbitrary_paths_without_network(self):
         for key,path in [('sk_live_fixture','/v1/checkout/sessions'),('sk_test_fixture','https://evil.test'),('sk_test_fixture','/v1/checkout/sessions/cs_live_x')]:
             with self.assertRaises(StripeError): request('POST',path,key)
@@ -243,6 +352,37 @@ class StripeHTTPTests(unittest.TestCase):
         self.assertEqual(self.call('/stripe-test')['status'],200)
         self.assertEqual(self.call('/api/stripe/status')['body']['state'],'pending')
         self.assertEqual(self.call('/api/stripe/report')['status'],403)
+    def test_session_commits_nonsecret_request_contract_before_any_checkout(self):
+        self.start()
+        from storage import digest
+        sid = digest(self.cookie.split('=', 1)[1])
+        persisted = self.store.get('session', sid, sid)
+        contract = persisted['stripe_checkout_contract']
+        self.assertEqual(contract['amount_cents'], 149)
+        self.assertEqual(contract['origin'], ENV['SCANPLUS_STRIPE_ORIGIN'])
+        self.assertEqual(set(contract), {'request_version', 'integration_identifier', 'amount_cents', 'origin'})
+        self.assertFalse(self.fake.calls)
+        with patch('stripe_checkout.INTEGRATION_IDENTIFIER', 'scanplus-sandbox-abcdefgh'), \
+             patch('stripe_checkout.LOOKUP_PRICE_CENTS', 199):
+            self.assertEqual(self.call('/api/stripe/status')['body']['amount_cents'], 149)
+            result = self.call('/api/stripe/checkout', {'accept_test': True})
+        self.assertEqual(result['status'], 200)
+        fields = self.fake.calls[-1][2]
+        self.assertEqual(fields['integration_identifier'], contract['integration_identifier'])
+        self.assertEqual(fields['line_items[0][price_data][unit_amount]'], '149')
+
+    def test_signed_async_failure_denies_report_and_duplicate_create(self):
+        self.start(); self.call('/api/stripe/checkout', {'accept_test': True})
+        self.fake.result.update(status='complete', payment_status='unpaid', payment_intent='pi_delayed_fixture')
+        event = {'id': 'evt_http_failure', 'livemode': False, 'type': 'checkout.session.async_payment_failed',
+                 'data': {'object': self.fake.result}}
+        raw, sig = signed(event)
+        self.assertEqual(self.call('/api/stripe/webhook', raw=raw, signature=sig, origin=False)['status'], 200)
+        self.assertEqual(self.call('/api/stripe/status')['body']['state'], 'failed')
+        self.assertEqual(self.call('/api/stripe/report')['status'], 403)
+        self.assertEqual(self.call('/api/stripe/checkout', {'accept_test': True})['status'], 400)
+        self.assertEqual(len(self.fake.calls), 1)
+
     def test_disabled_and_live_wsgi_fail_closed(self):
         self.start()
         with patch.dict(os.environ,{'SCANPLUS_STRIPE_TEST':''}): self.assertEqual(self.call('/api/stripe/status')['status'],503)

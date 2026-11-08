@@ -1,3 +1,9 @@
+> New private combined test preparation: [OWNER_CHECKOUT_TEST.md](OWNER_CHECKOUT_TEST.md) describes the opt-in Twilio verification → Stripe TEST checkout or configured 100% test coupon → separately consented Serper search. Offline checks pass; no deployment or real provider acceptance is implied. Existing demo and live-charge blocks remain unchanged.
+
+> Completed simulator review: [MORNING_RELEASE_REVIEW.md](MORNING_RELEASE_REVIEW.md). Core synthetic preview journey and actual PDF saving passed; public live/paid launch remains unqualified.
+
+> First-release plan, 8 November: see [FIRST_RELEASE_PLAN.md](FIRST_RELEASE_PLAN.md) for the current phased proposal, acceptance gates and remaining live-launch blockers. Older dated handoffs below are historical evidence, not permission to deploy.
+
 > Current release: see COMPLETION_HANDOFF.md and VERIFICATION_2026-11-07.md. They supersede older integration/readiness statements below. Default demo remains unchanged; the new sandbox profile is explicitly opt-in.
 
 # ScanPlus — local website MVP
@@ -44,7 +50,7 @@ Node is needed only for the optional JavaScript syntax check, not to run the app
 
 Vanilla HTML/CSS/JavaScript + Python standard-library JSON backend. No AI, external fonts, analytics, npm dependencies or background external work. `providers.py` defines discovery/removal contracts, three candidate official removal guides, fixture discovery, disabled live removal, and a fictional automatic-removal adapter. `payments.py` separates the server-owned, idempotent demo payment boundary from a fail-closed GoDaddy placeholder. `server.py` gates report access on verification and test checkout. The fixed fixture number is enforced server-side; changing browser inputs cannot query a real number.
 
-Session cookies are random, HttpOnly and SameSite Strict, with a configurable 15-minute default lifetime. SQLite stores hashed session/CSRF tokens, a hash of the synthetic number, verification expiry/attempt/consumption state, a per-session report ID, test receipt and simulated removal job state. No raw phone, OTP, card or raw nonce is persisted. Reload resumes the appropriate demo step. Clear session deletes its record; restart preserves unexpired records. Downloaded JSON remains on the tester’s Mac independently. Demo HTTP cookies are not Secure; HTTPS WSGI cookies are Secure. No real personal data is enabled; this is not encrypted storage and does not establish production privacy readiness. See SECURITY.md for limits, deletion and configuration.
+Session cookies are random, HttpOnly and SameSite Strict, with a configurable 15-minute default lifetime. SQLite stores hashed session/CSRF tokens, a hash of the synthetic number, verification expiry/attempt/consumption state, a per-session report ID, test receipt and simulated removal job state. No raw phone, OTP, card or raw nonce is persisted. Reload resumes the appropriate demo step. Clear session deletes its record; restart preserves unexpired records. Downloaded PDFs remain on the tester’s Mac independently. Demo HTTP cookies are not Secure; HTTPS WSGI cookies are Secure. No real personal data is enabled; this is not encrypted storage and does not establish production privacy readiness. See SECURITY.md for limits, deletion and configuration.
 
 API: POST /api/start, /api/verify, /api/checkout, /api/removal, /api/removal/status, /api/clear; GET /api/report. POST requires a configured/loopback host, same-origin Origin and session-bound CSRF token after starting. Session bootstrap rotates the token; stale tabs must reload. Checkout amount is server-controlled, repeated demo checkout returns the same receipt, and report access never trusts a browser payment flag. There is no production payment route. A separate opt-in Stripe sandbox flow now implements signed test webhooks and server reconciliation; see [STRIPE_TEST.md](STRIPE_TEST.md). It does not enable live charging or qualify production payment capture.
 
@@ -143,7 +149,7 @@ A separate, disabled-by-default API-backed discovery path is available in `local
 
 ## November 6 implementation: useful reports and 99-cent pricing
 
-The local provider-backed path now produces a readable report and JSON download with source timestamps, indexed-match/absent/unavailable distinctions, ownership review for each listing, and site-specific official manual instructions. Download routes recheck the current session and report expiry. The app never opens listings or submits requests automatically. Listing URLs can contain personal information; downloads remain on the device after Clear or expiry.
+The local provider-backed path now produces a PDF report with a plain-text alternative with source timestamps, indexed-match/absent/unavailable distinctions, ownership review for each listing, and site-specific official manual instructions. Download routes recheck the current session and report expiry. The app never opens listings or submits requests automatically. Listing URLs can contain personal information; downloads remain on the device after Clear or expiry.
 
 A customer can mark a listing as theirs/not theirs, or record that they manually submitted a request on the official site. Those are local checklist entries only. They never become independently verified removal, never enable automated submission, and never call a provider. Report-specific listing IDs prevent an old tab from applying its decisions to a replacement report. Repeated confirmation preserves recorded progress.
 
@@ -191,3 +197,46 @@ browser environment before visual or production readiness can be claimed.
 The single number box is editable. Non-example entries advance to the explicit
 unavailable screen and are cleared without a backend call or live lookup. The
 reserved example remains the only route into the synthetic demo.
+
+
+## Private hosted own-number self-test preparation
+
+See [HOSTED_SELF_TEST.md](HOSTED_SELF_TEST.md) for a separate, disabled-by-default
+owner-only Twilio-verification/Serper-search entrypoint. The existing demo
+deployment is unchanged. This path requires explicit provider/account approval,
+secure setup, a separately approved durable run allowance and deployment review.
+The additive ledger draft stores only an opaque run ID and counters, never phones
+or reports. No real provider calls or database schema changes are performed by
+its synthetic tests. Do not enable it solely because local checks pass.
+
+
+## PDF search reports (November 8)
+
+Report downloads now use PDF across the synthetic demo, Stripe sandbox,
+local live, private owner and no-SMS test paths. JSON download controls/routes
+are removed; internal JSON APIs remain for application state. The local routes
+are `/api/export.pdf` and `/api/export.txt` (plain-text alternative).
+
+`scan_report_pdf.py` renders in memory using only the Python standard library.
+It does not contact a PDF service, open result links, save report files on the
+server, or add a runtime dependency. The PDF contains an executive summary,
+per-source evidence and official manual opt-out steps, timestamps, source
+limitations, ownership/checklist distinctions and download-privacy guidance.
+Synthetic and no-SMS reports retain prominent labels. Unknown/unavailable
+sources never become absence findings; no removal is claimed as verified.
+
+Downloads retain existing current-session, owner, verification/payment (where
+applicable), host/origin and expiry checks. PDF responses are attachments with
+`application/pdf`, `no-store` and `nosniff`; local live/no-SMS paths recheck report
+expiry after rendering. Listing URLs are constrained to the corresponding HTTPS
+source host. Report input cannot introduce PDF scripts, attachments or arbitrary
+external destinations. Filenames and metadata do not contain a full number.
+Listing URLs may contain personal information; downloaded PDFs are not encrypted
+and survive session clearing/expiry.
+
+Selectable text, a semantic reading structure, document language, labeled links,
+bookmarks and page numbering are included. These checks do not certify PDF/UA,
+PDF/A or production accessibility; assistive-technology review remains needed.
+Optional authoring QA uses the bundled Poppler, pypdf and pdfplumber tools, not
+production dependencies. `tests/test_report_pdf.py` covers bounded pagination,
+structure, privacy, no-network/no-disk rendering, unsafe links and demo labeling.

@@ -15,7 +15,7 @@ with tempfile.TemporaryDirectory() as temp:
         if extra:env.update(extra)
         receipt={}
         def start(status,headers):receipt.update(status=int(status.split()[0]),headers=dict(headers))
-        raw=b''.join(application(env,start));return receipt,json.loads(raw)
+        raw=b''.join(application(env,start));return receipt,raw if receipt['headers'].get('Content-Type')=='application/pdf' else json.loads(raw)
     results=[]
     for workers in (2,8,16):
         server.STORE.close();server.STORE=Store(Path(temp)/f'{workers}.sqlite3')
@@ -38,9 +38,9 @@ with tempfile.TemporaryDirectory() as temp:
         statuses=[request('report',cookie=clients[0][0])[0]['status'] for _ in range(25)]
         assert 429 in statuses
     receipt,payload=request('export',cookie=clients[1][0]);assert receipt['status']==200
-    assert 'attachment' in receipt['headers']['Content-Disposition'];assert payload['demo'] and payload['phone']==server.FIXTURE_PHONES[1]
+    assert 'attachment' in receipt['headers']['Content-Disposition'];assert payload.startswith(b'%PDF-') and receipt['headers']['Content-Type']=='application/pdf'
     checks={}
     for name,path,extra,expected in [('host','session',{'HTTP_HOST':'evil.test'},403),('origin','start',{'HTTP_ORIGIN':'https://evil.test'},403),('traversal','../server.py',{},404),('cross_site','session',{'HTTP_SEC_FETCH_SITE':'cross-site'},403)]:
         receipt,_=request(path,{} if path=='start' else None,extra=extra);assert receipt['status']==expected;checks[name]=receipt['status']
     server.STORE.close()
-    print(json.dumps({'conditions':'Temporary SQLite, in-process WSGI application and global LOCK, two synthetic identities only; no browser rendering/network/provider latency. Not production capacity.','workloads':results,'limits':'429 observed at per-session 60/minute limit in each workload','local_security_checks':checks,'export':'Authenticated attachment schema/headers verified; OS browser save not inspected.','bottleneck':'WSGI global lock and SQLite serialize operations. Runtime/host and real integrations not qualified.'},indent=2))
+    print(json.dumps({'conditions':'Temporary SQLite, in-process WSGI application and global LOCK, two synthetic identities only; no browser rendering/network/provider latency. Not production capacity.','workloads':results,'limits':'429 observed at per-session 60/minute limit in each workload','local_security_checks':checks,'export':'Authenticated PDF signature/attachment headers verified; OS browser save not inspected.','bottleneck':'WSGI global lock and SQLite serialize operations. Runtime/host and real integrations not qualified.'},indent=2))

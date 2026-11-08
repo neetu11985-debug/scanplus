@@ -1,7 +1,8 @@
 """Opt-in local self-test adapters. No network occurs at import or construction.
 
-The existing synthetic app never imports this module. Only local_live_server.py
-may enable its real transport after explicit provider configuration.
+The existing synthetic app never imports this module. Only explicitly enabled
+local or private-hosted self-test entrypoints may use its real transport after
+provider configuration and the required consent gates.
 """
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -14,11 +15,17 @@ import time
 from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 from discovery import SITES
 from scan_report import build_report, update_manual_action
+from search_diagnostics import (SearchTransportFailure, diagnose_search_exception,
+                                search_diagnostic, NOT_DISPATCHED)
 
 MAX_RESPONSE = 1024 * 1024
 TTL = 300
 
 class ScanError(ValueError):
+    pass
+
+class ProviderNotDispatched(ScanError):
+    """A preflight reservation failed before any external provider call."""
     pass
 
 @dataclass(frozen=True, repr=False)
@@ -96,6 +103,8 @@ class HTTPSJSONTransport:
             try:
                 raw = response.read(MAX_RESPONSE + 1)
                 if len(raw) > MAX_RESPONSE:
+                    if parsed.hostname == 'google.serper.dev':
+                        raise SearchTransportFailure('response_too_large', response.status)
                     raise ScanError('Provider response exceeded the limit.')
                 if response.status not in (200, 201):
                     if is_twilio:
@@ -105,11 +114,13 @@ class HTTPSJSONTransport:
                         return response.status, {'code': code} if code is not None else None
                     return response.status, None
                 return response.status, json.loads(raw)
-            except Exception:
+            except Exception as error:
                 if is_twilio:
                     # Headers arrived but the body was unreadable, malformed or
                     # too large. Preserve only the known HTTP status. Never retry.
                     return response.status, None
+                if parsed.hostname == 'google.serper.dev':
+                    raise SearchTransportFailure(**diagnose_search_exception(error, response.status)) from None
                 raise
         finally:
             connection.close()
@@ -176,18 +187,23 @@ class SerperSearch:
             status, payload = self.transport.request('POST', 'https://google.serper.dev/search',
                 headers={'Accept': 'application/json', 'Content-Type': 'application/json', 'X-API-KEY': self.key},
                 body=json.dumps({'q': query, 'num': 10}))
-        except Exception:
-            return dict(result, reason='request_failed')
+        except ProviderNotDispatched:
+            return dict(result, reason='not_dispatched', query_attempted=False,
+                        search_diagnostic=search_diagnostic('not_dispatched'))
+        except Exception as error:
+            diagnostic = diagnose_search_exception(error)
+            return dict(result, reason=diagnostic['category'], search_diagnostic=diagnostic,
+                        query_attempted=diagnostic['category'] not in NOT_DISPATCHED)
         if status != 200:
             reason = 'throttled' if status == 429 else ('quota_or_access_unavailable' if status in (401, 402, 403) else 'provider_error')
-            return dict(result, reason=reason)
+            return dict(result, reason=reason, search_diagnostic=search_diagnostic('http_error', status))
         if not isinstance(payload, dict) or not isinstance(payload.get('organic'), list):
-            return dict(result, reason='invalid_response')
+            return dict(result, reason='invalid_response', search_diagnostic=search_diagnostic('invalid_response', status))
         results = payload['organic'][:10]
         # A malformed nonempty response is unavailable, never evidence of absence.
         if any(not isinstance(item, dict) or not isinstance(item.get('link'), str) or not item['link']
                or not any(isinstance(item.get(key), str) for key in ('title', 'snippet')) for item in results):
-            return dict(result, reason='invalid_response')
+            return dict(result, reason='invalid_response', search_diagnostic=search_diagnostic('invalid_response', status))
         seen = set()
         for item in results:
             link = live_source_link(item.get('link'), site)
@@ -297,6 +313,9 @@ class ScanSession:
         self.phase = 'start_uncertain'
         try:
             status, payload = self.providers.verify_request('Verifications', {'To': phone, 'Channel': 'sms'})
+        except ProviderNotDispatched:
+            self.clear()
+            raise
         except Exception:
             self.verification_diagnostic = verification_diagnostic()
             raise ScanError('SMS status is uncertain. A message may have been sent. No automatic retry occurred.'
@@ -316,13 +335,15 @@ class ScanSession:
         if self.phase != 'code' or not self.phone:
             raise ScanError('A current SMS challenge is required.')
         if self.attempts >= 5:
-            raise ScanError('Verification attempt limit reached. Clear the test to start over.')
+            raise ScanError('Verification attempt limit reached. Review the provider account and authorized allowance before any new test.')
         if not isinstance(code, str) or not re.fullmatch(r'[0-9]{4,10}', code):
             raise ScanError('Enter the verification code from the SMS.')
         self.attempts += 1
         self.verification_diagnostic = None
         try:
             status, payload = self.providers.verify_request('VerificationCheck', {'VerificationSid': self.sid, 'Code': code})
+        except ProviderNotDispatched:
+            raise
         except Exception:
             self.verification_diagnostic = verification_diagnostic()
             raise ScanError('Verification could not be confirmed. No search was performed.'
@@ -353,7 +374,7 @@ class ScanSession:
             sources = []
             for site in sorted(SITES):
                 if self.clock() >= self.expires:
-                    sources.append({'site': site, 'provider': provider, 'live': True, 'checked_at': datetime.now(timezone.utc).isoformat(), 'status': 'source_unavailable', 'candidates': [], 'reason': 'local_test_expired'})
+                    sources.append({'site': site, 'provider': provider, 'live': True, 'checked_at': datetime.now(timezone.utc).isoformat(), 'status': 'source_unavailable', 'candidates': [], 'reason': 'local_test_expired', 'query_attempted': False})
                 else:
                     sources.append(self.providers.discover(phone, site))
             self.report = build_report(sources, provider, self.last_four)

@@ -89,6 +89,35 @@ class LocalLiveHTTPTests(unittest.TestCase):
         self.assertIsNone(session['scan'].phone)
         session['expires'] = -1
         self.assertEqual(self.request('/api/clear', {})[0], 401)
+    def test_cookie_names_differ_by_port_and_preserve_sessions(self):
+        self.bootstrap()
+        first_port, first_cookie, first_csrf = self.port, self.cookie, self.csrf
+        transport = FakeTransport()
+        other = LocalLiveServer(('127.0.0.1', 0), Providers(SETTINGS, transport))
+        threading.Thread(target=other.serve_forever, kwargs={'poll_interval': .01}, daemon=True).start()
+        def close_other():
+            other.shutdown(); other.server_close()
+        self.addCleanup(close_other)
+        self.port = other.server_port
+        self.bootstrap()
+        second_cookie, second_csrf = self.cookie, self.csrf
+        self.assertNotEqual(first_cookie.split('=')[0], second_cookie.split('=')[0])
+        both = first_cookie + '; ' + second_cookie
+        for port, csrf in ((first_port, first_csrf), (other.server_port, second_csrf)):
+            self.port = port; self.cookie = both
+            self.bootstrap()
+            self.assertEqual(self.csrf, csrf)
+        self.assertEqual(len(self.server.sessions), 1)
+        self.assertEqual(len(other.sessions), 1)
+        self.assertEqual(self.transport.calls, [])
+        self.assertEqual(transport.calls, [])
+
+    def test_non_ascii_csrf_is_forbidden_without_provider_calls(self):
+        self.bootstrap()
+        self.assertEqual(self.request('/api/clear', {}, **{'X-CSRF-Token': 'é'})[0], 403)
+        self.assertEqual(self.transport.calls, [])
+        self.assertEqual(self.request('/api/session')[0], 200)
+
     def test_invalid_starts_do_not_consume_sms_budget(self):
         self.bootstrap()
         for _ in range(4):

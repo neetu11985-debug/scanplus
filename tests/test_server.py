@@ -27,8 +27,8 @@ class Journey(unittest.TestCase):
         c.request('POST' if data is not None else 'GET','/api/'+path,body,headers)
         r=c.getresponse(); raw=r.read(); cookie=r.getheader('Set-Cookie')
         if cookie: self.cookie=cookie.split(';')[0]
-        status=r.status; c.close(); result=json.loads(raw)
-        if 'csrf_token' in result:self.csrf=result['csrf_token']
+        status=r.status; content_type=r.getheader('Content-Type',''); c.close(); result=raw if content_type=='application/pdf' else json.loads(raw)
+        if isinstance(result,dict) and 'csrf_token' in result:self.csrf=result['csrf_token']
         return status,result
     def start(self): return self.req('start',{'phone':server.PHONE,'consent':True})
     def ready(self):

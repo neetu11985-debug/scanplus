@@ -93,7 +93,9 @@ with patch('stripe_checkout.request',fake), patch('secure_reports.REPORTS', Sand
  assert call('/api/stripe/report/save',{'confirm_synthetic':True})['status']==200
  download=call('/api/stripe/report/download')
  assert download['status']==200
- assert b'SYNTHETIC STRIPE SANDBOX' in download['raw']
+ assert download['raw'].startswith(b'%PDF-')
+ assert download['headers']['Content-Type']=='application/pdf'
+ assert 'scanplus-sandbox-report.pdf' in download['headers']['Content-Disposition']
  assert download['headers']['Cache-Control']=='no-store'
  assert call('/api/clear',{})['status']==200
  assert call('/api/stripe/report/download')['status']==403

@@ -6,9 +6,11 @@ from http.cookies import SimpleCookie, CookieError
 from socketserver import TCPServer
 from uuid import uuid4
 from providers import FixtureDiscovery
+from scan_report_pdf import demo_report_pdf
 import removal_requests
 from payments import DemoGateway
 from stripe_routes import StripeRoutes
+from stripe_checkout import new_checkout_contract
 from pricing import LookupPricing
 from history import DemoHistory
 from storage import Store,digest
@@ -92,6 +94,7 @@ class Handler(StripeRoutes, BaseHTTPRequestHandler):
             if not STORE.allow('session:'+self.sid,60):return self.reply(429,{'error':'Too many requests. Wait one minute.'})
             return self.reply(200,{'demo':True,'payments':DemoHistory(STORE).items(s['phone_ref'])})
         if self.path in ('/api/report','/api/export'):
+            if self.headers.get('Origin') not in (None,self.origin()):return self.reply(403,{'error':'Same-origin request required.'})
             s=self.session()
             if s and not STORE.allow('session:'+self.sid,60):return self.reply(429,{'error':'Too many requests. Wait one minute.'})
             if not s or not s['paid'] or s['verified_until']<=time.time():
@@ -103,7 +106,13 @@ class Handler(StripeRoutes, BaseHTTPRequestHandler):
             # Old demo polling claims are not receipts or removal evidence.
             report['removal']=report['removal_request']['status'] if report['removal_request'] else 'not_requested'
             if self.path=='/api/export':
-                raw=json.dumps(report).encode();self.send_response(200);self.headers_common();self.send_header('Content-Type','application/json');self.send_header('Content-Disposition','attachment; filename=scanplus-demo-report.json');self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw);return
+                raw=demo_report_pdf(report)
+                current=self.session()
+                if (not current or not current['verified'] or not current['paid']
+                        or current['verified_until']<=time.time()
+                        or current['report_id']!=report['report_id']):
+                    return self.reply(403,{'error':'Current test verification and checkout are required to download.'})
+                self.send_response(200);self.headers_common();self.send_header('Content-Type','application/pdf');self.send_header('Content-Disposition','attachment; filename=scanplus-demo-report.pdf');self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw);return
             return self.reply(200,report)
         paths={'/':'index.html','/app.js':'app.js','/style.css':'style.css', '/stripe-test':'stripe-test.html', '/stripe-test.js':'stripe-test.js'}
         if self.path not in paths:return self.reply(404,{'error':'Page not found.'})
@@ -135,6 +144,9 @@ class Handler(StripeRoutes, BaseHTTPRequestHandler):
                 return self.reply(503,{'error':'Demo capacity reached. Try later.'})
             token=secrets.token_urlsafe(32);csrf=secrets.token_urlsafe(32);self.sid=digest(token);now=time.time()
             s={'verified':False,'verified_until':0,'paid':False,'expires':now+TTL,'attempts':0,'challenge_expires':now+CHALLENGE_TTL,'consumed':False,'phone_ref':digest(data['phone']),'csrf_hash':digest(csrf),'report_id':str(uuid4()),'removal':'not_requested'}
+            # Commit the nonsecret Stripe request contract before any later
+            # checkout transaction/IO, including rollback and upgrade recovery.
+            s['stripe_checkout_contract'] = new_checkout_contract()
             self.save(s)
             cookie=f'sid={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={TTL}'+('; Secure' if getattr(self,'scheme','http')=='https' else '')
             return self.reply(200,{'demo':True,'csrf_token':csrf},cookie)
